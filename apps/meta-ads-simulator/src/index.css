@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: #ffffff;
+    color: #1c1e21;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: 13px;
+  }
+
+  /* Scrollbars finas, como las del Ads Manager en Chrome. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #c9ccd1;
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a9adb3;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  input,
+  button,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+@layer components {
+  /* Números de la tabla: tabulares para que no "bailen" al animarse. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  .meta-btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-meta-border bg-white px-3 py-[7px]
+      text-xs font-semibold text-meta-text transition-colors hover:bg-meta-hover
+      active:bg-[#E4E6EB] disabled:opacity-40;
+  }
+
+  .meta-btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-transparent bg-meta-blue px-3 py-[7px]
+      text-xs font-semibold text-white transition-colors hover:bg-[#0059DB] active:bg-[#0050C4];
+  }
+
+  .meta-btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-[6px] text-xs font-semibold
+      text-meta-text transition-colors hover:bg-meta-hover;
+  }
+
+  .panel-input {
+    @apply w-full rounded-md border border-meta-border bg-white px-2.5 py-1.5 text-xs
+      outline-none transition focus:border-meta-blue focus:ring-2 focus:ring-meta-blue/20;
+  }
+
+  .panel-label {
+    @apply mb-1 block text-2xs font-semibold uppercase tracking-wide text-meta-secondary;
+  }
+}
