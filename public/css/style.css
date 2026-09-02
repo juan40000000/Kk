@@ -523,7 +523,21 @@ img { max-width: 100%; }
 .act:hover { color: var(--text); background: var(--surface); }
 .act.is-on.like { color: var(--m-red); }
 .act.is-on.repost { color: var(--m-green); }
-.act .ic { font-size: 16px; }
+.act .ic { display: inline-flex; }
+.act .icn { width: 19px; height: 19px; }
+.act.is-on.like .icn { fill: currentColor; }
+
+/* Sistema de iconos SVG */
+.icn { width: 20px; height: 20px; display: block; flex: none; }
+.nav__item .ic { width: 24px; display: grid; place-items: center; }
+.nav__item .ic .icn { width: 22px; height: 22px; }
+.close-x { display: inline-flex; align-items: center; }
+.close-x .icn { width: 22px; height: 22px; }
+.tabbar button .icn { width: 25px; height: 25px; }
+.immersive__close { display: grid; place-items: center; }
+.immersive__close .icn { width: 20px; height: 20px; }
+.imm-act .ic .icn { width: 26px; height: 26px; }
+.imm-act.is-on.like .ic .icn { fill: currentColor; }
 
 /* =========================================================================
    EXPLORAR — mosaico de teselas vivas (Windows Phone)

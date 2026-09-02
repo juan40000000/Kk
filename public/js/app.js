@@ -16,6 +16,7 @@ const store = {
   route: { name: 'feed', param: null },
   feedType: 'foryou',
   compose: { color: null, emoji: null, size: 'small' },
+  currentList: [],
 };
 
 // ------------------------------ API ------------------------------
@@ -94,6 +95,23 @@ function avatar(user, cls = '') {
   )}</div>`;
 }
 
+// Set de iconos de línea (estilo Lucide) embebidos como SVG: sin
+// dependencias de red, consistentes y nítidos en cualquier pantalla.
+const ICONS = {
+  home: '<path d="M3 10.6 12 3l9 7.6"/><path d="M5.5 9.4V21h13V9.4"/>',
+  grid: '<rect x="3" y="3" width="7.5" height="7.5" rx="1.2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.2"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c0-4.2 3.6-6.5 7.5-6.5s7.5 2.3 7.5 6.5"/>',
+  heart: '<path d="M12 20.3S3.6 14.6 3.6 8.9A4.3 4.3 0 0 1 12 6.1a4.3 4.3 0 0 1 8.4 2.8c0 5.7-8.4 11.4-8.4 11.4Z"/>',
+  repeat: '<path d="M17 1.5 21 5.5 17 9.5"/><path d="M3 11.5v-1a4 4 0 0 1 4-4h14"/><path d="M7 22.5 3 18.5 7 14.5"/><path d="M21 12.5v1a4 4 0 0 1-4 4H3"/>',
+  message: '<path d="M20.5 15.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2Z"/>',
+  share: '<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 13.4 15.6 17.6"/><path d="M15.6 6.4 8.4 10.6"/>',
+  power: '<path d="M12 2.5v9"/><path d="M6.6 6.6a8 8 0 1 0 10.8 0"/>',
+  close: '<path d="M5.5 5.5 18.5 18.5"/><path d="M18.5 5.5 5.5 18.5"/>',
+};
+function icon(name, cls = '') {
+  return `<svg class="icn ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+}
+
 // ------------------------------ Router ------------------------------
 function navigate(name, param = null) {
   store.route = { name, param };
@@ -170,10 +188,9 @@ function shell(inner) {
   <div class="shell">
     <aside class="nav">
       <div class="nav__brand">tes<b>ela</b></div>
-      ${item('feed', '⬛', 'Inicio')}
-      ${item('explore', '🧩', 'Explorar')}
-      <a class="nav__item" data-nav="profile"><span class="ic">👤</span>Mi perfil</a>
-      <a class="nav__item" id="nav-immersive"><span class="ic">▶️</span>Modo TikTok</a>
+      ${item('feed', icon('home'), 'Inicio')}
+      ${item('explore', icon('grid'), 'Explorar')}
+      <a class="nav__item" data-nav="profile"><span class="ic">${icon('user')}</span>Mi perfil</a>
       <div class="nav__spacer"></div>
       <div class="nav__me">
         ${avatar(store.me, 'avatar--sm')}
@@ -181,7 +198,7 @@ function shell(inner) {
           <div style="font-weight:600;font-size:14px">${esc(store.me.displayName)}</div>
           <small>@${esc(store.me.username)}</small>
         </div>
-        <button class="close-x" id="logout" title="Salir">⏻</button>
+        <button class="close-x" id="logout" title="Salir" aria-label="Salir">${icon('power')}</button>
       </div>
     </aside>
 
@@ -190,13 +207,10 @@ function shell(inner) {
     <aside class="rail" id="rail"></aside>
   </div>
 
-  <button class="fab" id="fab" title="Modo inmersivo">▶</button>
-
   <nav class="tabbar"><div class="tabbar__inner">
-    <button data-nav="feed" class="${r === 'feed' ? 'is-active' : ''}">⬛<small>inicio</small></button>
-    <button data-nav="explore" class="${r === 'explore' ? 'is-active' : ''}">🧩<small>explorar</small></button>
-    <button id="tab-immersive">▶️<small>tiktok</small></button>
-    <button data-nav="profile" class="${r === 'profile' ? 'is-active' : ''}">👤<small>perfil</small></button>
+    <button data-nav="feed" class="${r === 'feed' ? 'is-active' : ''}">${icon('home')}<small>inicio</small></button>
+    <button data-nav="explore" class="${r === 'explore' ? 'is-active' : ''}">${icon('grid')}<small>explorar</small></button>
+    <button data-nav="profile" class="${r === 'profile' ? 'is-active' : ''}">${icon('user')}<small>perfil</small></button>
   </div></nav>`;
 }
 
@@ -206,12 +220,6 @@ function wireShell() {
   });
   const logout = $('#logout');
   if (logout) logout.addEventListener('click', doLogout);
-  const fab = $('#fab');
-  if (fab) fab.addEventListener('click', openImmersive);
-  const ti = $('#tab-immersive');
-  if (ti) ti.addEventListener('click', openImmersive);
-  const ni = $('#nav-immersive');
-  if (ni) ni.addEventListener('click', openImmersive);
 
   document.querySelectorAll('[data-feed]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -340,6 +348,7 @@ async function loadFeed() {
       );
       return;
     }
+    store.currentList = items;
     c.innerHTML = items.map(postCard).join('');
     wirePosts(c);
     observeImpressions(c);
@@ -373,10 +382,10 @@ function postCard(p) {
       ${reasons}
       ${p.tileColor ? banner : `<div class="post__text">${linkify(p.text)}</div>`}
       <div class="post__actions">
-        <button class="act like ${p.liked ? 'is-on' : ''}" data-act="like"><span class="ic">${p.liked ? '❤️' : '🤍'}</span><span class="n">${p.counts.like}</span></button>
-        <button class="act repost ${p.reposted ? 'is-on' : ''}" data-act="repost"><span class="ic">🔁</span><span class="n">${p.counts.repost}</span></button>
-        <button class="act comment" data-act="comment"><span class="ic">💬</span><span class="n">${p.counts.comment}</span></button>
-        <button class="act" data-act="share"><span class="ic">📤</span></button>
+        <button class="act like ${p.liked ? 'is-on' : ''}" data-act="like" aria-label="Me gusta"><span class="ic">${icon('heart')}</span><span class="n">${p.counts.like}</span></button>
+        <button class="act repost ${p.reposted ? 'is-on' : ''}" data-act="repost" aria-label="Eco"><span class="ic">${icon('repeat')}</span><span class="n">${p.counts.repost}</span></button>
+        <button class="act comment" data-act="comment" aria-label="Comentar"><span class="ic">${icon('message')}</span><span class="n">${p.counts.comment}</span></button>
+        <button class="act" data-act="share" aria-label="Compartir"><span class="ic">${icon('share')}</span></button>
       </div>
     </div>
   </article>`;
@@ -403,6 +412,9 @@ function wirePosts(root) {
         handleAction(btn.dataset.act, id, btn, card);
       });
     });
+    // Tocar la tesela abre el modo inmersivo (TikTok) a partir de ese post.
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => openImmersive(store.currentList, id));
   });
 }
 
@@ -411,7 +423,6 @@ async function handleAction(act, id, btn, card) {
     if (act === 'like') {
       const { liked, count } = await api(`/posts/${id}/like`, { method: 'POST' });
       btn.classList.toggle('is-on', liked);
-      btn.querySelector('.ic').textContent = liked ? '❤️' : '🤍';
       btn.querySelector('.n').textContent = count;
     } else if (act === 'repost') {
       const { reposted, count } = await api(`/posts/${id}/repost`, { method: 'POST' });
@@ -495,6 +506,7 @@ async function loadExplore() {
       ? hot.map(postCard).join('')
       : emptyState('🧩', 'Sin destacados todavía', 'Sé el primero en publicar algo.');
 
+    store.currentList = hot;
     c.innerHTML = `
       <div class="tiles">${tiles || ''}</div>
       <div class="section-head"><span class="metro-kicker">lo más caliente</span></div>
@@ -530,6 +542,7 @@ async function loadHashtag(tag) {
   const c = $('#content');
   try {
     const { posts } = await api('/hashtag/' + encodeURIComponent(tag));
+    store.currentList = posts;
     c.innerHTML = posts.length
       ? posts.map(postCard).join('')
       : emptyState('🔍', 'Sin teselas con #' + esc(tag), 'Sé el primero en usar este hashtag.');
@@ -549,6 +562,7 @@ async function loadProfile(username) {
     const u = data.user;
     const isMe = u.id === store.me.id;
     const color = u.avatarColor || colorFor(u.username);
+    store.currentList = data.posts;
     c.innerHTML = `
       <div class="topbar"><h2>${esc(u.displayName)}</h2></div>
       <div class="profile__cover" style="background:linear-gradient(135deg, ${color}, ${colorFor(u.displayName)})"></div>
@@ -686,7 +700,7 @@ async function openComments(postId) {
     <div class="modal">
       <div class="modal__head">
         <h3>comentarios</h3>
-        <button class="close-x" id="cm-close">×</button>
+        <button class="close-x" id="cm-close" aria-label="Cerrar">${icon('close')}</button>
       </div>
       <div class="modal__body" id="cm-body"><div class="loading"><div class="spinner"></div></div></div>
       <div class="modal__foot">
@@ -747,24 +761,30 @@ async function openComments(postId) {
 // =========================================================================
 // MODO INMERSIVO (TikTok)
 // =========================================================================
-async function openImmersive() {
-  let items = [];
-  try {
-    const res = await api('/feed?type=foryou');
-    items = res.items;
-  } catch (err) {
-    return toast(err.message, true);
+async function openImmersive(items, startId) {
+  if (!items || !items.length) {
+    try {
+      const res = await api('/feed?type=foryou');
+      items = res.items;
+    } catch (err) {
+      return toast(err.message, true);
+    }
   }
   if (!items.length) return toast('No hay teselas para el modo inmersivo', true);
 
   const wrap = document.createElement('div');
   wrap.className = 'immersive';
   wrap.innerHTML =
-    `<button class="immersive__close" id="imm-close">×</button>` +
+    `<button class="immersive__close" id="imm-close" aria-label="Cerrar">${icon('close')}</button>` +
     items.map(immCard).join('') +
     `<div class="imm-hint">desliza ↑ para la siguiente</div>`;
   document.body.appendChild(wrap);
   document.body.style.overflow = 'hidden';
+  // Posiciona el modo inmersivo en la tesela tocada.
+  if (startId) {
+    const t = wrap.querySelector(`.imm-card[data-post="${startId}"]`);
+    if (t) wrap.scrollTop = t.offsetTop;
+  }
 
   const close = () => {
     wrap.remove();
@@ -787,7 +807,6 @@ async function openImmersive() {
           if (act === 'like') {
             const { liked, count } = await api(`/posts/${id}/like`, { method: 'POST' });
             btn.classList.toggle('is-on', liked);
-            btn.querySelector('.ic').textContent = liked ? '❤' : '♡';
             btn.querySelector('.n').textContent = count;
           } else if (act === 'repost') {
             const { reposted, count } = await api(`/posts/${id}/repost`, { method: 'POST' });
@@ -832,9 +851,9 @@ function immCard(p) {
       <div><b>${esc(p.author.displayName)}</b><br><small style="opacity:.8">@${esc(p.author.username)}</small></div>
     </div>
     <div class="imm-card__rail">
-      <button class="imm-act like ${p.liked ? 'is-on' : ''}" data-act="like"><span class="ic">${p.liked ? '❤' : '♡'}</span><span class="n">${p.counts.like}</span></button>
-      <button class="imm-act repost ${p.reposted ? 'is-on' : ''}" data-act="repost"><span class="ic">🔁</span><span class="n">${p.counts.repost}</span></button>
-      <button class="imm-act comment" data-act="comment"><span class="ic">💬</span><span class="n">${p.counts.comment}</span></button>
+      <button class="imm-act like ${p.liked ? 'is-on' : ''}" data-act="like" aria-label="Me gusta"><span class="ic">${icon('heart')}</span><span class="n">${p.counts.like}</span></button>
+      <button class="imm-act repost ${p.reposted ? 'is-on' : ''}" data-act="repost" aria-label="Eco"><span class="ic">${icon('repeat')}</span><span class="n">${p.counts.repost}</span></button>
+      <button class="imm-act comment" data-act="comment" aria-label="Comentar"><span class="ic">${icon('message')}</span><span class="n">${p.counts.comment}</span></button>
     </div>
   </section>`;
 }
