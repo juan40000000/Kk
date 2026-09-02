@@ -1,0 +1,27 @@
+{
+  "name": "tesela",
+  "version": "1.0.0",
+  "description": "Tesela — red social estilo Twitter con interfaz Metro (Windows Phone) + Google+ y feed algorítmico estilo TikTok",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "red-social",
+    "metro",
+    "windows-phone",
+    "google-plus",
+    "tiktok-algorithm",
+    "twitter"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
