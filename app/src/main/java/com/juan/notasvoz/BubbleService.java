@@ -390,7 +390,7 @@ public class BubbleService extends Service {
                         Toast.LENGTH_SHORT).show();
                 return;
             }
-            store.create(Metro.capitalize(text));
+            store.createFromSpeech(text);
             flashSaved();
             Toast.makeText(BubbleService.this, "nota guardada: " + text, Toast.LENGTH_SHORT).show();
         }

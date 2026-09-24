@@ -5,37 +5,57 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
-import android.provider.Settings;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.speech.RecognizerIntent;
 import android.text.Editable;
+import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StrikethroughSpan;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.AccelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
 
 public class MainActivity extends Activity {
     public static final String ACTION_DICTATE = "com.juan.notasvoz.DICTATE";
     public static final String ACTION_WRITE = "com.juan.notasvoz.WRITE";
     public static final String PREF_BUBBLE = "bubble_enabled";
     private static final int REQ_PERMS = 43;
+    private static final int REQ_EXPORT = 44;
+    private static final int REQ_IMPORT = 45;
 
     private NoteStore store;
     private LinearLayout tiles;
@@ -47,6 +67,10 @@ public class MainActivity extends Activity {
     private long highlightId = -1;
     /** El usuario pidió la burbuja y estamos esperando que conceda permisos. */
     private boolean bubblePending;
+
+    private final Handler live = new Handler(Looper.getMainLooper());
+    private final Random random = new Random();
+    private final List<FrameLayout> liveTiles = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +98,14 @@ public class MainActivity extends Activity {
             BubbleService.start(this);
         }
         buildAppBar();
+        live.removeCallbacks(liveTick);
+        live.postDelayed(liveTick, 2500);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        live.removeCallbacks(liveTick);
     }
 
     private void handleAction(Intent intent) {
@@ -155,8 +187,8 @@ public class MainActivity extends Activity {
                 BubbleService.running ? Metro.APP_BAR_ON : 0, v -> toggleBubble()));
         appBar.addView(Metro.appBarButton(this, R.drawable.ic_search, "buscar", 0,
                 v -> toggleSearch()));
-        appBar.addView(Metro.appBarButton(this, R.drawable.ic_palette, "color", 0,
-                v -> pickAccent()));
+        appBar.addView(Metro.appBarButton(this, R.drawable.ic_more, "más", 0,
+                v -> moreMenu()));
     }
 
     private android.content.SharedPreferences prefs() {
@@ -257,12 +289,23 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != Metro.REQ_SPEECH || resultCode != RESULT_OK || data == null) return;
+        if (resultCode != RESULT_OK || data == null) return;
+        if (requestCode == REQ_EXPORT && data.getData() != null) {
+            exportTo(data.getData());
+            return;
+        }
+        if (requestCode == REQ_IMPORT && data.getData() != null) {
+            importFrom(data.getData());
+            return;
+        }
+        if (requestCode != Metro.REQ_SPEECH) return;
         ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
         if (results == null || results.isEmpty() || results.get(0).trim().isEmpty()) return;
-        Note note = store.create(Metro.capitalize(results.get(0)));
+        Note note = store.createFromSpeech(results.get(0));
         highlightId = note.id;
-        Toast.makeText(this, "nota guardada", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, note.isList()
+                ? "lista guardada con " + note.items.size() + " elementos"
+                : "nota guardada", Toast.LENGTH_SHORT).show();
         // onResume() redibuja los tiles y anima la nota nueva.
     }
 
@@ -272,7 +315,7 @@ public class MainActivity extends Activity {
         List<Note> all = store.all();
         List<Note> notes = new ArrayList<>();
         for (Note n : all) {
-            if (q.isEmpty() || n.text.toLowerCase(Locale.getDefault()).contains(q)) notes.add(n);
+            if (q.isEmpty() || n.plain().toLowerCase(Locale.getDefault()).contains(q)) notes.add(n);
         }
 
         int total = all.size();
@@ -280,9 +323,11 @@ public class MainActivity extends Activity {
                 : total == 1 ? "1 nota" : total + " notas");
 
         tiles.removeAllViews();
+        liveTiles.clear();
         if (notes.isEmpty()) {
             TextView empty = Metro.text(this, q.isEmpty()
-                            ? "toca el micrófono y di lo que quieras recordar. se guarda al instante."
+                            ? "toca el micrófono y di lo que quieras recordar. se guarda al instante.\n\n"
+                            + "prueba a decir \"comprar pan, leche y huevos\" para crear una lista."
                             : "no hay notas que coincidan.",
                     22, Metro.LIGHT, Metro.SUBTLE);
             empty.setPadding(dp(4), dp(24), dp(24), 0);
@@ -295,14 +340,26 @@ public class MainActivity extends Activity {
         int width = getResources().getDisplayMetrics().widthPixels - dp(32);
         int square = (width - gap) / 2;
 
+        boolean anyPinned = notes.get(0).pinned;
+        boolean inPinned = false;
         LinearLayout pendingRow = null;
         int index = 0;
         for (Note n : notes) {
+            if (anyPinned && n.pinned && !inPinned) {
+                tiles.addView(sectionLabel("fijadas"));
+                inPinned = true;
+            } else if (anyPinned && !n.pinned && inPinned) {
+                tiles.addView(sectionLabel("todas"));
+                inPinned = false;
+                pendingRow = null;
+            }
+
             boolean wide = isWide(n);
-            View tile = makeTile(n, wide);
+            FrameLayout tile = makeTile(n, wide);
             if (wide) {
                 pendingRow = null;
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(width, square);
+                int height = n.pinned ? square + square / 3 : square;
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(width, height);
                 lp.bottomMargin = gap;
                 tiles.addView(tile, lp);
             } else {
@@ -332,53 +389,292 @@ public class MainActivity extends Activity {
         highlightId = -1;
     }
 
+    private TextView sectionLabel(String s) {
+        TextView t = Metro.text(this, s, 20, Metro.LIGHT, Metro.SUBTLE);
+        t.setPadding(dp(2), dp(4), 0, dp(6));
+        return t;
+    }
+
     private static boolean isWide(Note n) {
+        if (n.pinned) return true;
+        if (n.isList()) return n.items.size() > 3;
         return n.text.length() > 60 || n.text.contains("\n");
     }
 
-    private View makeTile(Note n, boolean wide) {
+    /**
+     * Un tile tiene dos caras. La delantera muestra la nota; la trasera, un resumen
+     * (progreso de la lista o la fecha). Las caras se alternan solas como las live tiles.
+     */
+    private FrameLayout makeTile(Note n, boolean wide) {
         FrameLayout tile = new FrameLayout(this);
         tile.setBackgroundColor(n.color);
-        int pad = dp(12);
-        tile.setPadding(pad, pad, pad, pad);
 
-        boolean shortNote = !wide && n.text.length() <= 24;
-        TextView body = Metro.text(this, n.text,
-                shortNote ? 24 : wide ? 19 : 16,
-                shortNote || wide ? Metro.LIGHT : Metro.REGULAR, Color.WHITE);
-        body.setEllipsize(TextUtils.TruncateAt.END);
-        body.setMaxLines(wide ? 4 : shortNote ? 4 : 5);
-        body.setLineSpacing(0, 1.05f);
-        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        blp.bottomMargin = dp(18);
-        tile.addView(body, blp);
+        View front = tileFront(n, wide);
+        View back = tileBack(n);
+        tile.addView(front, matchParent());
+        tile.addView(back, matchParent());
+        back.setVisibility(View.GONE);
+        liveTiles.add(tile);
 
-        TextView date = Metro.text(this, Metro.friendlyDate(n.updated), 12, Metro.REGULAR,
-                Color.argb(220, 255, 255, 255));
-        tile.addView(date, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.START));
+        if (n.pinned) {
+            ImageView pin = new ImageView(this);
+            pin.setImageResource(R.drawable.ic_pin);
+            pin.setAlpha(0.9f);
+            int s = dp(18);
+            FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(s, s, Gravity.TOP | Gravity.END);
+            plp.setMargins(0, dp(10), dp(10), 0);
+            tile.addView(pin, plp);
+        }
 
         tile.setOnClickListener(v -> openEditor(n.id));
         tile.setOnLongClickListener(v -> {
-            confirmDelete(n);
+            tileMenu(n);
             return true;
         });
         Metro.tilt(tile);
         return tile;
     }
 
+    private FrameLayout.LayoutParams matchParent() {
+        return new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+    }
+
+    private View tileFront(Note n, boolean wide) {
+        FrameLayout face = new FrameLayout(this);
+        int pad = dp(12);
+        face.setPadding(pad, pad, n.pinned ? dp(32) : pad, pad);
+
+        CharSequence content;
+        float size;
+        Typeface font;
+        int maxLines;
+        if (n.isList()) {
+            content = listPreview(n);
+            size = 15;
+            font = Metro.REGULAR;
+            maxLines = wide ? (n.pinned ? 7 : 5) : 5;
+        } else {
+            boolean shortNote = !wide && n.text.length() <= 24;
+            content = n.text;
+            size = shortNote ? 24 : wide ? 19 : 16;
+            font = shortNote || wide ? Metro.LIGHT : Metro.REGULAR;
+            maxLines = wide ? (n.pinned ? 6 : 4) : shortNote ? 4 : 5;
+        }
+        TextView body = Metro.text(this, "", size, font, Color.WHITE);
+        body.setText(content);
+        body.setEllipsize(TextUtils.TruncateAt.END);
+        body.setMaxLines(maxLines);
+        body.setLineSpacing(0, 1.05f);
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.bottomMargin = dp(18);
+        face.addView(body, blp);
+
+        String foot = n.isList() ? n.doneCount() + "/" + n.items.size() + " · "
+                + Metro.friendlyDate(n.updated) : Metro.friendlyDate(n.updated);
+        TextView date = Metro.text(this, foot, 12, Metro.REGULAR, Color.argb(220, 255, 255, 255));
+        face.addView(date, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.START));
+        return face;
+    }
+
+    /** Título en negrita y elementos con ○ / ✓; los hechos van tachados. */
+    private CharSequence listPreview(Note n) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (!n.text.trim().isEmpty()) {
+            sb.append(n.text.trim());
+            sb.setSpan(new StyleSpan(Typeface.BOLD), 0, sb.length(), 0);
+        }
+        // Primero lo pendiente, que es lo que importa ver de un vistazo.
+        List<Note.Item> ordered = new ArrayList<>();
+        for (Note.Item i : n.items) if (!i.done) ordered.add(i);
+        for (Note.Item i : n.items) if (i.done) ordered.add(i);
+        for (Note.Item i : ordered) {
+            if (sb.length() > 0) sb.append('\n');
+            int start = sb.length();
+            sb.append(i.done ? "✓ " : "○ ").append(i.text);
+            if (i.done) {
+                sb.setSpan(new StrikethroughSpan(), start + 2, sb.length(), 0);
+                sb.setSpan(new ForegroundColorSpan(Color.argb(170, 255, 255, 255)), start,
+                        sb.length(), 0);
+            }
+        }
+        return sb;
+    }
+
+    private View tileBack(Note n) {
+        LinearLayout face = new LinearLayout(this);
+        face.setOrientation(LinearLayout.VERTICAL);
+        face.setGravity(Gravity.BOTTOM);
+        int pad = dp(12);
+        face.setPadding(pad, pad, pad, pad);
+        // Un velo oscuro distingue la cara trasera sin perder el color del tile.
+        face.setBackgroundColor(Color.argb(40, 0, 0, 0));
+
+        String big;
+        String small;
+        if (n.isList()) {
+            int done = n.doneCount();
+            big = done + "/" + n.items.size();
+            small = done == n.items.size() ? "¡todo hecho!"
+                    : (n.items.size() - done) + (n.items.size() - done == 1 ? " pendiente" : " pendientes");
+        } else {
+            String when = Metro.friendlyDate(n.updated);
+            int sp = when.lastIndexOf(' ');
+            boolean hasTime = sp > 0 && when.substring(sp).contains(":");
+            big = hasTime ? when.substring(0, sp) : when;
+            int words = n.text.trim().isEmpty() ? 0 : n.text.trim().split("\\s+").length;
+            small = (hasTime ? when.substring(sp + 1) + " · " : "")
+                    + words + (words == 1 ? " palabra" : " palabras");
+        }
+        TextView b = Metro.text(this, big, big.length() > 6 ? 28 : 40, Metro.LIGHT, Color.WHITE);
+        b.setIncludeFontPadding(false);
+        b.setSingleLine(true);
+        face.addView(b);
+        TextView s = Metro.text(this, small, 14, Metro.REGULAR, Color.WHITE);
+        s.setSingleLine(true);
+        s.setEllipsize(TextUtils.TruncateAt.END);
+        face.addView(s);
+        return face;
+    }
+
+    // ---- Live tiles ----
+
+    private final Runnable liveTick = new Runnable() {
+        @Override
+        public void run() {
+            flipRandomTile();
+            live.postDelayed(this, 2600 + random.nextInt(1800));
+        }
+    };
+
+    private void flipRandomTile() {
+        if (liveTiles.isEmpty()) return;
+        FrameLayout tile = liveTiles.get(random.nextInt(liveTiles.size()));
+        if (!tile.isShown() || tile.isPressed()) return;
+        View front = tile.getChildAt(0);
+        View back = tile.getChildAt(1);
+        tile.setCameraDistance(8000 * getResources().getDisplayMetrics().density);
+        tile.animate().rotationX(90f).setDuration(220)
+                .setInterpolator(new AccelerateInterpolator())
+                .withEndAction(() -> {
+                    boolean showBack = front.getVisibility() == View.VISIBLE;
+                    front.setVisibility(showBack ? View.GONE : View.VISIBLE);
+                    back.setVisibility(showBack ? View.VISIBLE : View.GONE);
+                    tile.setRotationX(-90f);
+                    tile.animate().rotationX(0f).setDuration(260)
+                            .setInterpolator(new DecelerateInterpolator()).start();
+                }).start();
+    }
+
+    // ---- Menús ----
+
+    private void tileMenu(Note n) {
+        String[] options = {n.pinned ? "desfijar" : "fijar arriba", "borrar"};
+        new AlertDialog.Builder(this)
+                .setItems(options, (d, which) -> {
+                    if (which == 0) {
+                        n.pinned = !n.pinned;
+                        store.save(n);
+                        Toast.makeText(this, n.pinned ? "nota fijada" : "nota desfijada",
+                                Toast.LENGTH_SHORT).show();
+                        highlightId = n.id;
+                        refresh();
+                    } else {
+                        confirmDelete(n);
+                    }
+                })
+                .show();
+    }
+
     private void confirmDelete(Note n) {
+        String preview = n.plain();
         new AlertDialog.Builder(this)
                 .setTitle("¿borrar nota?")
-                .setMessage(n.text.length() > 120 ? n.text.substring(0, 120) + "…" : n.text)
+                .setMessage(preview.length() > 120 ? preview.substring(0, 120) + "…" : preview)
                 .setPositiveButton("borrar", (d, w) -> {
                     store.delete(n.id);
                     refresh();
                 })
                 .setNegativeButton("cancelar", null)
                 .show();
+    }
+
+    private void moreMenu() {
+        String[] options = {"color de énfasis", "guardar copia de seguridad",
+                "restaurar copia de seguridad"};
+        new AlertDialog.Builder(this)
+                .setItems(options, (d, which) -> {
+                    if (which == 0) pickAccent();
+                    else if (which == 1) startExport();
+                    else startImport();
+                })
+                .show();
+    }
+
+    // ---- Copia de seguridad ----
+
+    /** Abre el selector del sistema: se puede guardar en el teléfono o en Google Drive. */
+    private void startExport() {
+        String day = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, "notas-" + day + ".json");
+        try {
+            startActivityForResult(i, REQ_EXPORT);
+        } catch (android.content.ActivityNotFoundException e) {
+            Toast.makeText(this, "no se encontró dónde guardar archivos", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void startImport() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        // Drive y otros proveedores no siempre marcan los .json como application/json.
+        i.setType("*/*");
+        try {
+            startActivityForResult(i, REQ_IMPORT);
+        } catch (android.content.ActivityNotFoundException e) {
+            Toast.makeText(this, "no se encontró dónde abrir archivos", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void exportTo(Uri uri) {
+        try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+            if (out == null) throw new IOException("sin acceso");
+            out.write(store.exportJson().getBytes(StandardCharsets.UTF_8));
+            int n = store.all().size();
+            Toast.makeText(this, "copia guardada: " + n + (n == 1 ? " nota" : " notas"),
+                    Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "no se pudo guardar la copia", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void importFrom(Uri uri) {
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new IOException("sin acceso");
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int r;
+            while ((r = in.read(chunk)) != -1) buf.write(chunk, 0, r);
+            int changed = store.importJson(buf.toString("UTF-8"));
+            firstShow = true;
+            refresh();
+            new AlertDialog.Builder(this)
+                    .setTitle("copia restaurada")
+                    .setMessage(changed == 0 ? "ya tenías todas estas notas."
+                            : changed == 1 ? "se recuperó 1 nota."
+                            : "se recuperaron " + changed + " notas.")
+                    .setPositiveButton("ok", null)
+                    .show();
+        } catch (Exception e) {
+            Toast.makeText(this, "ese archivo no es una copia de Notas válida",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private void pickAccent() {
