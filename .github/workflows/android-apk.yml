@@ -1,0 +1,49 @@
+name: Construir APK
+
+on:
+  push:
+    paths:
+      - 'game/**'
+      - 'android/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Compilar APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../AstroGlow.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AstroGlow-apk
+          path: AstroGlow.apk
+
+      - name: Publicar release con el APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-v${{ github.run_number }}
+          name: Astro Glow (build ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          body: |
+            APK instalable de **Astro Glow** generado desde `${{ github.ref_name }}` (${{ github.sha }}).
+            Descarga `AstroGlow.apk` en tu Android y ábrelo (permite "instalar apps de origen desconocido").
+          files: AstroGlow.apk
+          make_latest: true

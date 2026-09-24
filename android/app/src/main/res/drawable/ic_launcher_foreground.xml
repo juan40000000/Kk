@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- halo -->
+    <path android:fillColor="#3346FFD0" android:pathData="M54,52m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <!-- mochila -->
+    <path android:fillColor="#B9C2D6" android:pathData="M36,50h8v18h-8z" />
+    <!-- cuerpo -->
+    <path android:fillColor="#F4F6FB" android:pathData="M42,54h24v20h-24z" />
+    <!-- piernas -->
+    <path android:fillColor="#E8ECF5" android:pathData="M44,72h8v10h-8zM56,72h8v10h-8z" />
+    <!-- casco -->
+    <path android:fillColor="#FFFFFF" android:pathData="M55,42m-15,0a15,15 0,1 1,30 0a15,15 0,1 1,-30 0" />
+    <!-- visor -->
+    <path android:fillColor="#46FFD0" android:pathData="M54,36h14a4,4 0,0 1,4 4v6a4,4 0,0 1,-4 4h-14a4,4 0,0 1,-4 -4v-6a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#CCFFFFFF" android:pathData="M63,39m-3,0a3,1.6 0,1 1,6 0a3,1.6 0,1 1,-6 0" />
+    <!-- panel -->
+    <path android:fillColor="#46FFD0" android:pathData="M50,60h8v3h-8z" />
+    <path android:fillColor="#B8FF5A" android:pathData="M50,65h4v2h-4z" />
+    <!-- antena -->
+    <path android:fillColor="#B8FF5A" android:pathData="M46,24h2v6h-2zM47,23m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+</vector>

@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.astroglow.game'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.astroglow.game'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // El juego HTML5 vive en /game y se empaqueta como assets/www
+    sourceSets {
+        main {
+            assets.srcDirs = ["$buildDir/generated/gameAssets"]
+        }
+    }
+
+    signingConfigs {
+        release {
+            // Usa un keystore propio si se definen las variables de entorno ASTRO_*
+            def ks = System.getenv('ASTRO_KEYSTORE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('ASTRO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ASTRO_KEY_ALIAS')
+                keyPassword System.getenv('ASTRO_KEY_PASSWORD')
+            } else {
+                // Clave de desarrollo incluida en el repo: permite instalar actualizaciones
+                // sobre versiones anteriores. Para publicar en Play Store usa tu propio keystore.
+                storeFile file('astroglow-dev.keystore')
+                storePassword 'astroglow'
+                keyAlias 'astroglow'
+                keyPassword 'astroglow'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+def copyGame = tasks.register('copyGameAssets', Sync) {
+    from("${rootDir}/../game")
+    into("$buildDir/generated/gameAssets/www")
+}
+tasks.named('preBuild') { dependsOn copyGame }
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+}
