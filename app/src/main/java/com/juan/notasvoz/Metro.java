@@ -47,6 +47,8 @@ public final class Metro {
     };
 
     public static final int APP_BAR = 0xFF1F1F1F;
+    /** Relleno de un botón de la barra cuando su función está encendida. */
+    public static final int APP_BAR_ON = 0xFF3A3A3A;
     public static final int SUBTLE = 0xFF8A8A8A;
 
     public static final Typeface LIGHT = Typeface.create("sans-serif-light", Typeface.NORMAL);
@@ -114,7 +116,10 @@ public final class Metro {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER_HORIZONTAL);
-        box.setPadding(dp(c, 14), dp(c, 8), dp(c, 14), dp(c, 6));
+        box.setPadding(dp(c, 2), dp(c, 8), dp(c, 2), dp(c, 6));
+        // Todos los botones se reparten el ancho, así caben cinco en pantallas pequeñas.
+        box.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         ImageView iv = new ImageView(c);
         int size = dp(c, 48);

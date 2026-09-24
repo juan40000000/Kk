@@ -1,8 +1,13 @@
 package com.juan.notasvoz;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -29,6 +34,8 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     public static final String ACTION_DICTATE = "com.juan.notasvoz.DICTATE";
     public static final String ACTION_WRITE = "com.juan.notasvoz.WRITE";
+    public static final String PREF_BUBBLE = "bubble_enabled";
+    private static final int REQ_PERMS = 43;
 
     private NoteStore store;
     private LinearLayout tiles;
@@ -38,6 +45,8 @@ public class MainActivity extends Activity {
     private LinearLayout appBar;
     private boolean firstShow = true;
     private long highlightId = -1;
+    /** El usuario pidió la burbuja y estamos esperando que conceda permisos. */
+    private boolean bubblePending;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +66,14 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refresh();
+        if (bubblePending) {
+            bubblePending = false;
+            enableBubble();
+        } else if (prefs().getBoolean(PREF_BUBBLE, false) && !BubbleService.running
+                && hasBubblePermissions()) {
+            BubbleService.start(this);
+        }
+        buildAppBar();
     }
 
     private void handleAction(Intent intent) {
@@ -134,10 +151,83 @@ public class MainActivity extends Activity {
                 v -> dictate()));
         appBar.addView(Metro.appBarButton(this, R.drawable.ic_add, "nueva", 0,
                 v -> openEditor(-1)));
+        appBar.addView(Metro.appBarButton(this, R.drawable.ic_bubble, "burbuja",
+                BubbleService.running ? Metro.APP_BAR_ON : 0, v -> toggleBubble()));
         appBar.addView(Metro.appBarButton(this, R.drawable.ic_search, "buscar", 0,
                 v -> toggleSearch()));
         appBar.addView(Metro.appBarButton(this, R.drawable.ic_palette, "color", 0,
                 v -> pickAccent()));
+    }
+
+    private android.content.SharedPreferences prefs() {
+        return getSharedPreferences("notas", MODE_PRIVATE);
+    }
+
+    private boolean hasBubblePermissions() {
+        return Settings.canDrawOverlays(this)
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void toggleBubble() {
+        if (BubbleService.running) {
+            prefs().edit().putBoolean(PREF_BUBBLE, false).apply();
+            BubbleService.stop(this);
+            Toast.makeText(this, "burbuja oculta", Toast.LENGTH_SHORT).show();
+            buildAppBar();
+        } else {
+            enableBubble();
+        }
+    }
+
+    /** Pide lo que falte (dibujar encima, micrófono, notificaciones) y enciende la burbuja. */
+    private void enableBubble() {
+        if (!Settings.canDrawOverlays(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("burbuja flotante")
+                    .setMessage("para que el micrófono flote sobre las otras apps, activa "
+                            + "\"Mostrar sobre otras apps\" para Notas en la siguiente pantalla "
+                            + "y luego vuelve aquí.")
+                    .setPositiveButton("activar", (d, w) -> {
+                        bubblePending = true;
+                        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName())));
+                    })
+                    .setNegativeButton("cancelar", null)
+                    .show();
+            return;
+        }
+        List<String> missing = new ArrayList<>();
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.RECORD_AUDIO);
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        if (!missing.isEmpty()) {
+            requestPermissions(missing.toArray(new String[0]), REQ_PERMS);
+            return;
+        }
+        prefs().edit().putBoolean(PREF_BUBBLE, true).apply();
+        BubbleService.start(this);
+        Toast.makeText(this, "toca la burbuja para dictar · arrástrala a la X para quitarla",
+                Toast.LENGTH_LONG).show();
+        tiles.postDelayed(this::buildAppBar, 300);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode != REQ_PERMS) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED) {
+            enableBubble();
+        } else {
+            Toast.makeText(this, "la burbuja necesita el micrófono para grabar",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private void toggleSearch() {

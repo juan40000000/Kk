@@ -16,6 +16,10 @@ instala encima de la anterior sin perder tus notas.
 ## Qué hace
 
 - **dictar**: toca el micrófono, habla y la nota se guarda al instante como un tile de color.
+- **burbuja flotante**: toca "burbuja" en la barra de abajo. Aparece un micrófono que flota
+  sobre todas las apps; tócalo, habla y la nota se guarda sola (se pone roja mientras escucha
+  y verde al guardar). Arrástralo a cualquier borde, o hasta la X de abajo para quitarlo.
+  La primera vez pide permiso para "mostrarse sobre otras apps" y para el micrófono.
 - **atajo rápido**: mantén pulsado el icono de la app → "Dictar nota".
 - toca un tile para editarlo, seguir dictando, cambiar su color o compartirlo.
 - mantén pulsado un tile para borrarlo.
