@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Notas</string>
+    <string name="shortcut_dictate_short">Dictar nota</string>
+    <string name="shortcut_dictate_long">Dictar una nota nueva</string>
+    <string name="shortcut_write_short">Escribir nota</string>
+</resources>

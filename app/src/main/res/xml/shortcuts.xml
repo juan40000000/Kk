@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="dictar"
+        android:enabled="true"
+        android:icon="@drawable/shortcut_mic"
+        android:shortcutShortLabel="@string/shortcut_dictate_short"
+        android:shortcutLongLabel="@string/shortcut_dictate_long">
+        <intent
+            android:action="com.juan.notasvoz.DICTATE"
+            android:targetPackage="com.juan.notasvoz"
+            android:targetClass="com.juan.notasvoz.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="escribir"
+        android:enabled="true"
+        android:icon="@drawable/shortcut_add"
+        android:shortcutShortLabel="@string/shortcut_write_short">
+        <intent
+            android:action="com.juan.notasvoz.WRITE"
+            android:targetPackage="com.juan.notasvoz"
+            android:targetClass="com.juan.notasvoz.MainActivity" />
+    </shortcut>
+</shortcuts>
