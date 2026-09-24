@@ -3,6 +3,7 @@
 // Arte procedural: fondos con parallax, tiles luminosos, personajes
 // ---------------------------------------------------------------
 const LAYER_W = 1600;
+let PULSE = 0; // pulso del ritmo (0..1), actualizado cada fotograma
 
 function buildArt(wi) {
   const W = WORLDS[wi], rng = mulberry32(333 + wi * 71);
@@ -39,6 +40,9 @@ function buildArt(wi) {
   art.far = makeCanvas(LAYER_W, VIEW_H); art.mid = makeCanvas(LAYER_W, VIEW_H);
   paintLayers(art, W, rng);
   art.tiles = buildTiles(W, wi);
+  // Figuras geométricas de neón (estilo Geometry Dash) que laten con la música
+  art.shapes = [];
+  for (let i = 0; i < 16; i++) art.shapes.push({ x: rng() * LAYER_W, y: 60 + rng() * 380, s: 18 + rng() * 60, k: Math.floor(rng() * 4), rot: rng() * 6, spd: (rng() - 0.5) * 0.8, c: [W.accent, W.accent2, W.accent3][i % 3], par: 0.2 + rng() * 0.35 });
   art.ambient = [];
   for (let i = 0; i < 45; i++) art.ambient.push({ x: rng() * 2000, y: rng() * VIEW_H, p: rng() * 6, s: 0.5 + rng(), v: 0.5 + rng() });
   return art;
@@ -264,7 +268,27 @@ function drawBackground(ctx, art, camX, t, VW) {
   if (W.planet) drawPlanet(ctx, W.planet, VW, t, camX);
   if (W.layer === 'aurora') drawAurora(ctx, W, VW, t, camX);
   layer(art.far, 0.15);
+  drawShapes(ctx, art, camX, t, VW);
   layer(art.mid, 0.4, 20);
+}
+function drawShapes(ctx, art, camX, t, VW) {
+  ctx.globalCompositeOperation = 'lighter';
+  const sc = 1 + PULSE * 0.12;
+  for (const s of art.shapes) {
+    let x = ((s.x - camX * s.par) % LAYER_W + LAYER_W) % LAYER_W; if (x > VW + 100) x -= LAYER_W; if (x < -100) continue;
+    const r = s.s * sc;
+    ctx.save(); ctx.translate(x, s.y + Math.sin(t * 0.6 + s.rot) * 12); ctx.rotate(s.rot + t * s.spd);
+    ctx.strokeStyle = s.c; ctx.globalAlpha = 0.16 + PULSE * 0.3; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    if (s.k === 0) ctx.rect(-r / 2, -r / 2, r, r);
+    else if (s.k === 1) { ctx.moveTo(0, -r * 0.6); ctx.lineTo(r * 0.55, r * 0.4); ctx.lineTo(-r * 0.55, r * 0.4); ctx.closePath(); }
+    else if (s.k === 2) ctx.arc(0, 0, r / 2, 0, 7);
+    else { ctx.moveTo(0, -r / 2); ctx.lineTo(r / 2, 0); ctx.lineTo(0, r / 2); ctx.lineTo(-r / 2, 0); ctx.closePath(); }
+    ctx.stroke();
+    ctx.globalAlpha = 0.05 + PULSE * 0.08; ctx.fillStyle = s.c; ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
 function drawPlanet(ctx, p, VW, t, camX) {
   const x = p.x * VW - camX * 0.02, y = p.y * VIEW_H, r = p.r;
@@ -501,4 +525,108 @@ function drawItem(ctx, it, t, W) {
     ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 6 : 14; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('1', 0, 4); ctx.restore();
   }
+}
+
+// ---------------------------------------------------------------
+// Acción: enemigos nuevos, orbes, impulsores, disparos y jefe
+// ---------------------------------------------------------------
+function drawHitFlash(ctx, e) {
+  if (!(e.flash > 0)) return;
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, e.flash * 10);
+  const r = Math.max(e.w, e.h) * 1.1;
+  ctx.drawImage(glowSprite('#ffffff', true), e.x + e.w / 2 - r, e.y + e.h / 2 - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function drawTurret(ctx, e, t, W) {
+  const x = e.x + e.w / 2, y = e.y + e.h;
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.moveTo(x - 18, y); ctx.lineTo(x - 12, y - 22); ctx.lineTo(x + 12, y - 22); ctx.lineTo(x + 18, y); ctx.fill();
+  ctx.strokeStyle = rgba(W.hazard, 0.7); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#12091e'; ctx.beginPath(); ctx.arc(x, y - 24, 13, 0, 7); ctx.fill(); ctx.stroke();
+  const ch = e.charge || 0, a = e.aim || 0;
+  ctx.fillStyle = ch > 0 ? '#ffffff' : W.hazard; ctx.beginPath(); ctx.arc(x + Math.cos(a) * 5, y - 24 + Math.sin(a) * 5, 4 + ch * 4, 0, 7); ctx.fill();
+  for (let i = 0; i < 4; i++) { const an = t * 2 + i * Math.PI / 2; ctx.fillStyle = W.hazard; ctx.fillRect(x + Math.cos(an) * 17 - 1.5, y - 24 + Math.sin(an) * 17 - 1.5, 3, 3); }
+}
+function drawCharger(ctx, e, t, W) {
+  const x = e.x + e.w / 2, y = e.y + e.h, dir = e.vx < 0 ? -1 : 1, rage = e.mode === 'charge' || e.mode === 'tell';
+  ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1);
+  if (e.mode === 'tell') ctx.translate(Math.sin(t * 60) * 2, 0);
+  ctx.fillStyle = '#0b0410'; ctx.beginPath();
+  ctx.moveTo(-19, 0); ctx.lineTo(-20, -22); ctx.lineTo(-10, -34); ctx.lineTo(8, -36); ctx.lineTo(20, -24); ctx.lineTo(21, 0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = rage ? W.hazard : rgba(W.accent3, 0.8); ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = rage ? '#ffffff' : W.hazard;
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-14 + i * 8, -33 + (i === 3 ? 4 : 0)); ctx.lineTo(-10 + i * 8, -44 - (rage ? 4 : 0)); ctx.lineTo(-6 + i * 8, -32); ctx.fill(); }
+  ctx.fillStyle = rage ? '#ffffff' : W.hazard; ctx.beginPath(); ctx.ellipse(9, -21, 5, rage ? 2 : 4, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = rgba(W.hazard, 0.9); ctx.fillRect(14, -10, 8, 3);
+  ctx.restore();
+}
+function drawJOrb(ctx, e, t, W) {
+  const r = e.r * (1 + PULSE * 0.18) * (e.used > 0 ? 1 + e.used * 2 : 1);
+  ctx.save(); ctx.translate(e.x, e.y); ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.9; ctx.drawImage(glowSprite('#ffe45a'), -r * 2.2, -r * 2.2, r * 4.4, r * 4.4);
+  ctx.strokeStyle = '#fff6b0'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+  ctx.rotate(t * 3); ctx.strokeStyle = '#ffd21f'; ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(0, 0, r + 6, i * Math.PI / 2, i * Math.PI / 2 + 0.8); ctx.stroke(); }
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, r * 0.35, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function drawBoost(ctx, e, t, W) {
+  ctx.fillStyle = '#1a1030'; ctx.fillRect(e.x, e.y + 4, e.w, 6);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 3; i++) {
+    const ox = ((t * 90 + i * 14) % 42) - 2;
+    ctx.fillStyle = rgba(W.accent2, 0.9 - ox / 60);
+    ctx.beginPath(); ctx.moveTo(e.x + ox, e.y); ctx.lineTo(e.x + ox + 8, e.y + 5); ctx.lineTo(e.x + ox, e.y + 10); ctx.lineTo(e.x + ox + 4, e.y + 5); ctx.fill();
+  }
+  ctx.globalAlpha = 0.6 + PULSE * 0.4; ctx.drawImage(glowSprite(W.accent2), e.x - 20, e.y - 30, e.w + 40, 60); ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+function drawShot(ctx, s, W) {
+  ctx.globalCompositeOperation = 'lighter';
+  if (s.pl) {
+    const len = 26, a = Math.atan2(s.vy, s.vx);
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(a);
+    ctx.globalAlpha = 0.9; ctx.drawImage(glowSprite(W.accent), -len - 10, -14, len + 30, 28);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(-len, -2, len + 6, 4);
+    ctx.restore();
+  } else {
+    const r = s.r * (1 + Math.sin(s.t * 20) * 0.15);
+    ctx.globalAlpha = 1; ctx.drawImage(glowSprite(s.c || W.hazard), s.x - r * 3, s.y - r * 3, r * 6, r * 6);
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(s.x, s.y, r * 0.55, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function drawBoss(ctx, b, t, W, px, py) {
+  if (!b.alive && b.deadT > 1.6) return;
+  const x = b.x + b.w / 2, y = b.y + b.h / 2, R = b.w / 2, c = b.phase > 1 ? W.hazard : W.accent3;
+  ctx.save(); ctx.translate(x, y);
+  if (!b.alive) ctx.translate((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12);
+  if (b.mode === 'tell') ctx.translate(Math.sin(t * 70) * 3, 0);
+  // halo
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.55 + PULSE * 0.35; ctx.drawImage(glowSprite(c), -R * 3, -R * 3, R * 6, R * 6);
+  // anillos giratorios
+  for (let i = 0; i < 3; i++) {
+    ctx.save(); ctx.rotate(t * (i % 2 ? -1 : 1) * (0.8 + i * 0.5) * b.phase);
+    ctx.strokeStyle = i === 1 ? W.accent : c; ctx.globalAlpha = 0.75; ctx.lineWidth = 3 - i * 0.6;
+    const rr = R + 14 + i * 13 + PULSE * 6;
+    for (let k = 0; k < 6 - i; k++) { ctx.beginPath(); ctx.arc(0, 0, rr, k * Math.PI * 2 / (6 - i), k * Math.PI * 2 / (6 - i) + 0.55); ctx.stroke(); }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  // púas
+  ctx.fillStyle = '#07030d';
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + t * 0.4; ctx.beginPath(); ctx.moveTo(Math.cos(a - 0.18) * R * 0.9, Math.sin(a - 0.18) * R * 0.9); ctx.lineTo(Math.cos(a) * (R + 16 + (i % 2) * 8), Math.sin(a) * (R + 16 + (i % 2) * 8)); ctx.lineTo(Math.cos(a + 0.18) * R * 0.9, Math.sin(a + 0.18) * R * 0.9); ctx.fill(); }
+  // núcleo
+  const g = ctx.createRadialGradient(-R * 0.3, -R * 0.3, 4, 0, 0, R);
+  g.addColorStop(0, '#2a1640'); g.addColorStop(0.7, '#0c0616'); g.addColorStop(1, '#000000');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+  ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.stroke();
+  // ojo que sigue al jugador
+  const a = Math.atan2(py - y, px - x), open = b.mode === 'tell' ? 1.25 : 1;
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(0, 0, R * 0.5, R * 0.34 * open, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = c; ctx.beginPath(); ctx.arc(Math.cos(a) * R * 0.18, Math.sin(a) * R * 0.1, R * 0.22, 0, 7); ctx.fill();
+  ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(Math.cos(a) * R * 0.2, Math.sin(a) * R * 0.11, R * 0.06, R * 0.16, 0, 0, 7); ctx.fill();
+  if (b.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, b.flash * 8); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill(); }
+  ctx.restore();
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }

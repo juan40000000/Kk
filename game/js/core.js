@@ -37,28 +37,28 @@ function glowSprite(color, hard) {
 // Entrada: teclado + táctil multitouch
 // ---------------------------------------------------------------
 const Input = {
-  left: false, right: false, jump: false, jumpPressed: false, anyPressed: false,
+  left: false, right: false, jump: false, fire: false, jumpPressed: false, anyPressed: false,
   touch: ('ontouchstart' in window) || navigator.maxTouchPoints > 0,
   keys: {}, pointers: new Map(), taps: [],
   consume() { this.jumpPressed = false; this.anyPressed = false; this.taps.length = 0; },
 };
 (function () {
-  const L = ['ArrowLeft', 'KeyA'], R = ['ArrowRight', 'KeyD'], J = ['Space', 'ArrowUp', 'KeyW', 'KeyZ', 'KeyK'];
+  const L = ['ArrowLeft', 'KeyA'], R = ['ArrowRight', 'KeyD'], J = ['Space', 'ArrowUp', 'KeyW', 'KeyZ', 'KeyK'], F = ['KeyX', 'KeyJ', 'KeyF', 'KeyC', 'ControlLeft', 'ShiftLeft'];
   addEventListener('keydown', e => {
-    if (e.repeat) { if ([...L, ...R, ...J].includes(e.code)) e.preventDefault(); return; }
+    if (e.repeat) { if ([...L, ...R, ...J, ...F].includes(e.code)) e.preventDefault(); return; }
     Input.keys[e.code] = true; Input.anyPressed = true;
     if (J.includes(e.code)) Input.jumpPressed = true;
-    if ([...L, ...R, ...J].includes(e.code)) e.preventDefault();
+    if ([...L, ...R, ...J, ...F].includes(e.code)) e.preventDefault();
     Sound.unlock();
   });
   addEventListener('keyup', e => { Input.keys[e.code] = false; });
   Input.updateKeys = function () {
     const k = this.keys;
-    let l = L.some(c => k[c]), r = R.some(c => k[c]), j = J.some(c => k[c]);
+    let l = L.some(c => k[c]), r = R.some(c => k[c]), j = J.some(c => k[c]), f = F.some(c => k[c]);
     for (const p of this.pointers.values()) {
-      if (p.btn === 'L') l = true; else if (p.btn === 'R') r = true; else if (p.btn === 'J') j = true;
+      if (p.btn === 'L') l = true; else if (p.btn === 'R') r = true; else if (p.btn === 'J') j = true; else if (p.btn === 'F') f = true;
     }
-    this.left = l; this.right = r; this.jump = j;
+    this.left = l; this.right = r; this.jump = j; this.fire = f;
   };
 })();
 
@@ -67,7 +67,7 @@ const Input = {
 // ---------------------------------------------------------------
 const Sound = (() => {
   let ctx = null, master, musicBus, sfxBus, revIn, delayIn, noiseBuf;
-  let song = null, step = 0, nextTime = 0, timer = null, musicOn = true, sfxOn = true;
+  let song = null, songStart = 0, step = 0, nextTime = 0, timer = null, musicOn = true, sfxOn = true;
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 
   function load() {
@@ -167,8 +167,8 @@ const Sound = (() => {
   // ---- secuenciador ----
   function tick() {
     if (!ctx || !song || ctx.state !== 'running') return;
-    if (nextTime < ctx.currentTime) nextTime = ctx.currentTime + 0.05;
     const sd = 60 / song.bpm / 4;
+    if (nextTime < ctx.currentTime) { nextTime = ctx.currentTime + 0.05; songStart = nextTime - step * sd; }
     while (nextTime < ctx.currentTime + 0.2) { playStep(step, nextTime, sd); nextTime += sd; step++; }
   }
   function playStep(s, t, sd) {
@@ -186,6 +186,8 @@ const Sound = (() => {
     }
     if (S.kick && S.kick.includes(pos) && bar >= (S.drumIn || 0)) kick(t, S.kickVol || 0.35);
     if (S.hat && S.hat.includes(pos) && bar >= (S.drumIn || 0)) noise(t, 0.05, S.hatVol || 0.03);
+    if (S.snare && S.snare.includes(pos) && bar >= (S.drumIn || 0)) { noise(t, 0.18, S.snareVol || 0.12, 1900, 'bandpass'); pluck(50, t, 0.06, 'triangle', 0.1, false); }
+    if (S.sub && pos % 2 === 1) pluck(root + chord[0] - 12, t, 0.03, 'sawtooth', 0.12, false);
     if (S.lead) {
       const phraseBar = bar % 4;
       if (bar >= (S.leadIn || 2)) for (const [b, p, ti, len] of S.lead) if (b === phraseBar && p === pos) {
@@ -199,7 +201,7 @@ const Sound = (() => {
     if (song === s) return;
     song = s; step = 0;
     if (ctx) {
-      nextTime = ctx.currentTime + 0.15;
+      nextTime = ctx.currentTime + 0.15; songStart = nextTime;
       if (Sound._dl) Sound._dl.delayTime.setValueAtTime(60 / s.bpm * 0.75, ctx.currentTime);
     }
   }
@@ -235,10 +237,26 @@ const Sound = (() => {
     check() { chime([84, 88, 91, 96], 0.09, 0.08); },
     portal() { chime([72, 76, 79, 83, 84, 88, 91, 95, 96], 0.09, 0.08); },
     select() { chime([84, 91], 0.05, 0.07); },
+    shoot() { sweep('square', 1400, 380, 0.08, 0.035); sweep('sine', 1800, 600, 0.06, 0.05); },
+    hit() { sweep('square', 600, 200, 0.05, 0.05); },
+    explode() { if (!ctx || !sfxOn) return; const t = ctx.currentTime; noise(t, 0.5, 0.35, 900, 'lowpass', sfxBus); sweep('sine', 160, 35, 0.45, 0.4); },
+    boom() { if (!ctx || !sfxOn) return; const t = ctx.currentTime; noise(t, 1.4, 0.5, 600, 'lowpass', sfxBus); sweep('sine', 120, 25, 1.2, 0.55); chime([60, 67, 72, 79, 84], 0.1, 0.08, 'sawtooth'); },
+    eshot() { sweep('triangle', 500, 240, 0.12, 0.06); },
+    orb() { chime([84, 91, 96], 0.03, 0.08, 'triangle'); sweep('sine', 500, 1400, 0.18, 0.1); },
+    boost() { sweep('sawtooth', 200, 1200, 0.35, 0.05); if (ctx && sfxOn) noise(ctx.currentTime, 0.4, 0.15, 2000, 'bandpass', sfxBus); },
+    combo(n) { chime([72 + Math.min(n, 12) * 2, 79 + Math.min(n, 12) * 2], 0.05, 0.09, 'square'); },
+    roar() { if (!ctx || !sfxOn) return; sweep('sawtooth', 90, 40, 1.4, 0.2); sweep('sawtooth', 95, 42, 1.4, 0.2); noise(ctx.currentTime, 1.2, 0.2, 400, 'lowpass', sfxBus); },
+    warn() { chime([69, 69, 69], 0.25, 0.1, 'square'); },
   };
 
+  // Fase del pulso actual (0..1) para sincronizar luces con la música
+  function beat() {
+    if (!ctx || !song || ctx.state !== 'running') return (performance.now() / 600) % 1;
+    const spb = 60 / song.bpm, e = ctx.currentTime - songStart;
+    return e < 0 ? 0 : (e / spb) % 1;
+  }
   return {
-    unlock, playSong, sfx,
+    unlock, playSong, sfx, beat,
     get musicOn() { return musicOn; }, get sfxOn() { return sfxOn; },
     toggleMusic() { musicOn = !musicOn; if (musicBus) musicBus.gain.setTargetAtTime(musicOn ? 0.6 : 0, ctx.currentTime, 0.1); save(); },
     toggleSfx() { sfxOn = !sfxOn; if (sfxBus) sfxBus.gain.value = sfxOn ? 0.55 : 0; save(); },

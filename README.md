@@ -18,9 +18,20 @@ Cada mundo tiene 2 niveles, su propia paleta, iluminación dinámica (oscuridad 
 halos de luz), frase inspiradora y banda sonora generada en tiempo real con Web Audio
 (pads, arpegios, bajo, campanas y reverb).
 
+## Acción
+
+- **Disparo de luz** con autoapuntado al enemigo más cercano delante (botón ⚡, o X / J / clic).
+- **Enemigos:** sombras que caminan, medusas flotantes, torretas que disparan y embestidores con púas.
+- **Jefe final** en el segundo nivel de cada mundo, con barra de vida, fase de furia al 50 %
+  y ataques en patrones: ráfagas apuntadas, anillos de balas, picado con onda de choque, lluvia y esbirros.
+- **Estilo Geometry Dash:** orbes dorados de salto en el aire, plataformas de impulso,
+  y figuras de neón, bordes y luces que laten al ritmo de la música.
+- **Impacto:** explosiones con ondas de choque, destellos, congelado al golpear, cámara lenta y combos.
+
 ## Cómo se juega
 
 - **Mover:** botones ◀ ▶ (táctil) o flechas / A-D.
+- **Disparar:** botón ⚡ o X / J / clic (mantén pulsado para ráfaga).
 - **Saltar:** botón de salto o Espacio. Pulsa otra vez en el aire para el **doble salto con propulsor**.
 - Salta sobre las sombras para vencerlas; evita pinchos y lava.
 - Golpea las **cajas de energía ✦** desde abajo: polvo estelar, **escudo de luz** o vidas extra.
