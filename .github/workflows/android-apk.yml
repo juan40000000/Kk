@@ -1,4 +1,4 @@
-name: Construir APK
+name: Astro Glow APK
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Publicar release con el APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-v${{ github.run_number }}
+          tag_name: astroglow-v${{ github.run_number }}
           name: Astro Glow (build ${{ github.run_number }})
           target_commitish: ${{ github.sha }}
           body: |

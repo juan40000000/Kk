@@ -29,7 +29,7 @@ halos de luz), frase inspiradora y banda sonora generada en tiempo real con Web 
 
 ## Instalar el APK
 
-Cada push que cambia `game/` o `android/` ejecuta el workflow **Construir APK**
+Cada push que cambia `game/` o `android/` ejecuta el workflow **Astro Glow APK**
 (GitHub Actions), que compila el APK firmado y lo publica en **Releases**
 (`AstroGlow.apk`). Descárgalo desde el móvil y ábrelo (permite instalar apps de
 origen desconocido).
