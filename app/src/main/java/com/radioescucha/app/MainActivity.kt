@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -17,6 +18,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -190,6 +192,18 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
             setBackgroundColor(C_BG)
             setPadding(px(6), px(6), px(6), px(6))
         }
+        // Android 15 dibuja la app detrás de las barras del sistema: dejar espacio para no tapar botones.
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val (l, t, r, b) = if (Build.VERSION.SDK_INT >= 30) {
+                val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                listOf(i.left, i.top, i.right, i.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                listOf(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+            }
+            v.setPadding(px(6) + l, px(6) + t, px(6) + r, px(6) + b)
+            insets
+        }
 
         // Barra superior
         val title = label("📡 Radio Escucha SDR", 17f, C_TEXT).apply { typeface = Typeface.DEFAULT_BOLD }
@@ -296,8 +310,8 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
             row(
                 startBtn,
                 recBtn,
-                button("★ Marcadores") { showBookmarks() },
-                button("🔎 Escáner") { showScanner() },
+                button("★ Favoritos") { showBookmarks() },
+                button("🔎 Buscar") { showScanner() },
             )
         )
 
@@ -361,6 +375,7 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
         }
         engine.demod.offsetHz = off
         spectrum.channelOffsetHz = off
+        if (!engine.running) spectrum.centerHz = engine.centerHz
         spectrum.invalidate()
         updateFreqDisplay()
     }
@@ -388,6 +403,8 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
         if (whole != 0L) {
             dragAccum -= whole
             engine.setCenter(engine.centerHz + whole)
+            if (!engine.running) spectrum.centerHz = engine.centerHz
+            spectrum.invalidate()
             updateFreqDisplay()
         }
     }
@@ -498,12 +515,16 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
         ui.post {
             statusText.text = "Escuchando · $sourceName"
             startBtn.text = "■ Detener"
+            if (sourceName.startsWith("Demo")) {
+                toast("Modo Demo: probá ★ Favoritos → ISS 145.800 o 🔎 Buscar en 2 m")
+            }
             startBtn.background = rounded(Color.rgb(90, 30, 30), stroke = C_RED)
         }
     }
 
     override fun onStopped(error: String?) {
         ui.post {
+            stopScanner()
             statusText.text = if (error != null) "Error: $error" else "Detenido"
             startBtn.text = "▶ Iniciar"
             startBtn.background = rounded(C_PANEL, stroke = Color.rgb(40, 70, 95))
@@ -697,10 +718,6 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
                 refresh()
                 return@setOnClickListener
             }
-            if (!engine.running) {
-                toast("Primero iniciá el receptor (▶ Iniciar)")
-                return@setOnClickListener
-            }
             val a = startEt.text.toString().replace(',', '.').toDoubleOrNull()
             val b = endEt.text.toString().replace(',', '.').toDoubleOrNull()
             if (a == null || b == null || b <= a) {
@@ -711,6 +728,7 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
             lastScanner = sc
             spectrum.channelOffsetHz = null
             engine.scanner = sc
+            if (!engine.running) startReceiver()
             refresh()
         }
 
@@ -808,8 +826,8 @@ class MainActivity : Activity(), RadioEngine.Callback, SpectrumView.Listener {
                     "\"RTL-SDR driver\". También podés conectarte a un servidor rtl_tcp en tu red, o usar el modo Demo.\n\n" +
                     "• Tocá la cascada para sintonizar una señal; arrastrá para moverte por la banda.\n" +
                     "• Tocá la frecuencia para escribir una nueva.\n" +
-                    "• ★ Marcadores: ISS, APRS, satélites meteorológicos, banda aérea, marina y más.\n" +
-                    "• 🔎 Escáner: barre una banda y lista las señales activas que encuentra, con su intensidad.\n" +
+                    "• ★ Favoritos: ISS, APRS, satélites meteorológicos, banda aérea, marina y más.\n" +
+                    "• 🔎 Buscar: barre una banda y lista las señales activas que encuentra, con su intensidad.\n" +
                     "• ⏺ Grabar: guarda el audio en WAV.\n\n" +
                     "Por defecto arranca en modo Demo. Cambiá la fuente en ⚙ Ajustes.\n\n" +
                     "Recordá: escuchar está permitido en la mayoría de los países, pero respetá la privacidad " +

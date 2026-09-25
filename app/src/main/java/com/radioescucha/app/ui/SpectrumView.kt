@@ -28,7 +28,6 @@ class SpectrumView(context: Context) : View(context) {
 
     /** Frecuencia central del espectro que se está mostrando. */
     var centerHz = 0L
-        private set
     /** Canal sintonizado respecto al centro y su ancho de banda; null oculta el marcador. */
     var channelOffsetHz: Double? = 0.0
     var channelLow = -6000
@@ -171,7 +170,7 @@ class SpectrumView(context: Context) : View(context) {
             }
             canvas.drawPath(path, linePaint)
         } else {
-            canvas.drawText("Sin señal: presioná ▶ Iniciar", 8 * dp, specH / 2, textPaint)
+            canvas.drawText("Detenido: tocá ▶ Iniciar (abajo)", 8 * dp, specH / 2, textPaint)
         }
         canvas.drawText(String.format("%.0f dB", hi), 2 * dp, 12 * dp, textPaint)
 

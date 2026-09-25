@@ -9,10 +9,10 @@ señales interesantes** en las bandas que elijas.
 - **Espectro + cascada** de 1 MHz de ancho. Tocá una señal para sintonizarla; arrastrá para recorrer la banda.
 - **Demoduladores**: WFM (FM comercial), NFM (repetidoras, marina, PMR), AM (banda aérea, CB),
   USB/LSB (banda lateral) y CW (Morse, con tono de 700 Hz).
-- **🔎 Buscador de señales**: barre una banda (2 m, 70 cm, aérea, marina, satélites, PMR/FRS, ISM 433,
+- **🔎 Buscar señales**: barre una banda (2 m, 70 cm, aérea, marina, satélites, PMR/FRS, ISM 433,
   FM, CB o un rango propio) y lista las emisiones que encuentra con su SNR, banda, modo sugerido y
   cuántas veces se escucharon. Tocá un resultado para escucharlo.
-- **★ Marcadores** con frecuencias interesantes predefinidas: ISS (voz, APRS, repetidor), APRS,
+- **★ Favoritos** con frecuencias interesantes predefinidas: ISS (voz, APRS, repetidor), APRS,
   satélites Meteor-M, emergencia aeronáutica 121.5, marino canal 16, NOAA, PMR446, FRS, FT8, WWV…
   y los tuyos propios.
 - **Plan de bandas** integrado: muestra en qué banda estás y elige el modo adecuado.
