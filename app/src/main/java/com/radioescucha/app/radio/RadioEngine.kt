@@ -110,7 +110,7 @@ class RadioEngine(private val cb: Callback) {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(maxOf(min, rate * 2 / 3))
+            .setBufferSizeInBytes(maxOf(min, rate / 2 * 2)) // 0,5 s; múltiplo del tamaño de muestra (2 bytes)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
     }
