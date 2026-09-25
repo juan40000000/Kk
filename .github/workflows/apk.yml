@@ -1,0 +1,48 @@
+name: Compilar APK
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Pruebas y compilación
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease
+
+      - name: Renombrar APK
+        run: cp app/build/outputs/apk/release/app-release.apk RadioEscucha-SDR.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RadioEscucha-SDR-apk
+          path: RadioEscucha-SDR.apk
+
+      - name: Publicar APK descargable
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Radio Escucha SDR (${{ github.ref_name }})
+          prerelease: true
+          files: RadioEscucha-SDR.apk
+          body: |
+            APK compilado automáticamente desde `${{ github.sha }}`.
+            Descargá **RadioEscucha-SDR.apk**, abrilo en el teléfono y permití "instalar apps de origen desconocido".
