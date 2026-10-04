@@ -200,6 +200,19 @@ public class MainActivity extends Activity {
         bestText.setTextColor(0xbbffffff);
         scoreCol.addView(scoreText);
         scoreCol.addView(bestText);
+        TextView warBtn = button("⚔ GUERRA 3D");
+        styleButton(warBtn, 0xccb3260b, 0xffffa36b);
+        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        wlp.topMargin = (int) (8 * dp);
+        warBtn.setLayoutParams(wlp);
+        warBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new android.content.Intent(MainActivity.this, WarActivity.class));
+            }
+        });
+        scoreCol.addView(warBtn);
         topBar.addView(scoreCol);
 
         comboText = label("", 20, true);

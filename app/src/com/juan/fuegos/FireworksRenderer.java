@@ -467,7 +467,7 @@ public class FireworksRenderer implements GLSurfaceView.Renderer {
         GLES20.glDisableVertexAttribArray(aPos);
     }
 
-    private static void bindTex(int prog, String name, int tex, int unit) {
+    static void bindTex(int prog, String name, int tex, int unit) {
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0 + unit);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(prog, name), unit);
@@ -485,7 +485,7 @@ public class FireworksRenderer implements GLSurfaceView.Renderer {
         return s;
     }
 
-    private static int program(String vs, String fs) {
+    static int program(String vs, String fs) {
         int p = GLES20.glCreateProgram();
         GLES20.glAttachShader(p, shader(GLES20.GL_VERTEX_SHADER, vs));
         GLES20.glAttachShader(p, shader(GLES20.GL_FRAGMENT_SHADER, fs));
@@ -497,7 +497,7 @@ public class FireworksRenderer implements GLSurfaceView.Renderer {
         return p;
     }
 
-    private static void texParams(boolean linear) {
+    static void texParams(boolean linear) {
         int f = linear ? GLES20.GL_LINEAR : GLES20.GL_NEAREST;
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, f);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, f);
@@ -505,7 +505,7 @@ public class FireworksRenderer implements GLSurfaceView.Renderer {
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
     }
 
-    private static int[] makeFbo(int w, int h) {
+    static int[] makeFbo(int w, int h) {
         int[] t = new int[1], f = new int[1];
         GLES20.glGenTextures(1, t, 0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0]);
@@ -545,7 +545,7 @@ public class FireworksRenderer implements GLSurfaceView.Renderer {
     }
 
     /** Textura de nube (ruido fractal con caída radial) para el humo. */
-    private static int makeCloudTexture() {
+    static int makeCloudTexture() {
         int n = 128;
         Random rnd = new Random(7);
         int g = 16;
