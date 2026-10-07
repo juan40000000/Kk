@@ -1,5 +1,6 @@
 package com.juan.monocromo;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -10,7 +11,13 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -19,9 +26,12 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.transition.ChangeBounds;
+import android.transition.TransitionManager;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -44,9 +54,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Launcher monocromo al estilo Windows Phone: pantalla de inicio con mosaicos
@@ -85,12 +98,32 @@ public class MainActivity extends Activity {
     private TextView clockDate;
     private TextView clockStats;
 
+    private FrameLayout grid;
+    private final Map<String, Tile> tiles = new LinkedHashMap<>();
+    private int cell;
+    private int gap;
+    private Tile resizing;
+    private int resizeStart;
+    private boolean resizeMoved;
+    private boolean resizeChanged;
+    private float downX;
+    private float downY;
+
+    private PixelWeatherView weatherPixels;
+    private TextView weatherTemp;
+    private TextView weatherDesc;
+    private TextView weatherSub;
+    private boolean weatherLoading;
+    private long weatherLastTry;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+
     private GestureDetector gestures;
 
     private final Runnable clockTick = new Runnable() {
         @Override
         public void run() {
             updateClock();
+            refreshWeather(false);
             handler.postDelayed(this, 10_000);
         }
     };
@@ -153,6 +186,12 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        io.shutdownNow();
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Botón de inicio: volver siempre a la pantalla de inicio, arriba del todo.
@@ -163,7 +202,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (overlay.getVisibility() != View.VISIBLE) gestures.onTouchEvent(ev);
+        if (overlay.getVisibility() != View.VISIBLE && resizing == null) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
     }
 
@@ -222,6 +261,20 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------------------ inicio (mosaicos)
 
+    /** Columnas de la rejilla: pequeño 1x1, mediano 2x2, ancho 4x2, grande 4x4. */
+    private static final int COLS = 4;
+    private static final int[] SIZE_W = {1, 2, 4, 4};
+    private static final int[] SIZE_H = {1, 2, 2, 4};
+    private static final String[] SIZE_NAMES = {"pequeño", "mediano", "ancho", "grande"};
+
+    private static final class Tile {
+        AppEntry app;
+        FrameLayout view;
+        TextView mono;
+        TextView label;
+        TextView mark;
+    }
+
     private void buildStartPage() {
         startPage = new ScrollView(this);
         startPage.setVerticalScrollBarEnabled(false);
@@ -234,11 +287,61 @@ public class MainActivity extends Activity {
 
     private void renderStart() {
         startContent.removeAllViews();
-        int gap = dp(8);
+        tiles.clear();
+        gap = dp(8);
         int avail = screenW - dp(24);
-        int half = (avail - gap) / 2;
+        cell = (avail - gap * (COLS - 1)) / COLS;
+        int wideH = cell * 2 + gap;
 
-        // Mosaico de reloj: hora, fecha y el uso de hoy.
+        startContent.addView(buildClockTile(), lp(avail, wideH, gap));
+        updateClock();
+        startContent.addView(buildWeatherTile(), lp(avail, wideH, gap));
+        updateWeather();
+
+        grid = new FrameLayout(this);
+        grid.setClipChildren(false);
+        startContent.addView(grid, lp(avail, 0, 0));
+        for (String key : prefs.pinned()) {
+            AppEntry a = byKey.get(key);
+            if (a == null || tiles.containsKey(key)) continue;
+            Tile t = makeTile(a);
+            tiles.put(key, t);
+            grid.addView(t.view, new FrameLayout.LayoutParams(cell, cell));
+        }
+        layoutTiles(false);
+
+        if (tiles.isEmpty()) {
+            TextView hint = text("desliza a la izquierda para ver tus apps.\n"
+                    + "mantén pulsada una app para anclarla aquí.", 16, GRAY);
+            hint.setPadding(dp(4), dp(12), dp(4), dp(12));
+            startContent.addView(hint);
+        } else if (!prefs.isHintSeen()) {
+            TextView hint = text("mantén pulsado un mosaico y desliza para cambiar su tamaño.", 14, GRAY);
+            hint.setPadding(dp(4), dp(4), dp(4), dp(4));
+            startContent.addView(hint);
+        }
+
+        // Pie: ajustes y flecha hacia la lista, como en Windows Phone.
+        LinearLayout footer = new LinearLayout(this);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        footer.setPadding(dp(4), dp(16), dp(4), 0);
+        TextView dots = text("• • •", 20, WHITE);
+        dots.setPadding(0, dp(8), dp(24), dp(8));
+        dots.setOnClickListener(v -> showSettings());
+        footer.addView(dots);
+        footer.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
+        TextView all = text("todas las apps", 16, WHITE);
+        all.setPadding(0, 0, dp(12), 0);
+        footer.addView(all);
+        TextView arrow = text("→", 22, WHITE);
+        arrow.setGravity(Gravity.CENTER);
+        arrow.setBackground(roundOutline());
+        footer.addView(arrow, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        footer.setOnClickListener(v -> showList());
+        startContent.addView(footer);
+    }
+
+    private View buildClockTile() {
         LinearLayout clock = new LinearLayout(this);
         clock.setOrientation(LinearLayout.VERTICAL);
         clock.setGravity(Gravity.BOTTOM);
@@ -258,101 +361,202 @@ public class MainActivity extends Activity {
             return true;
         });
         addTilt(clock);
-        startContent.addView(clock, lp(avail, half, gap));
-        updateClock();
-
-        LinearLayout row = null;
-        int inRow = 0;
-        boolean any = false;
-        for (String key : prefs.pinned()) {
-            AppEntry a = byKey.get(key);
-            if (a == null) continue;
-            any = true;
-            if (prefs.isWide(key)) {
-                row = null;
-                inRow = 0;
-                startContent.addView(tile(a, true), lp(avail, half, gap));
-            } else {
-                if (row == null) {
-                    row = new LinearLayout(this);
-                    row.setOrientation(LinearLayout.HORIZONTAL);
-                    startContent.addView(row, lp(avail, half, gap));
-                }
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(half, half);
-                if (inRow == 0) p.rightMargin = gap;
-                row.addView(tile(a, false), p);
-                if (++inRow == 2) {
-                    row = null;
-                    inRow = 0;
-                }
-            }
-        }
-
-        if (!any) {
-            TextView hint = text("desliza a la izquierda para ver tus apps.\n"
-                    + "mantén pulsada una app para anclarla aquí.", 16, GRAY);
-            hint.setPadding(dp(4), dp(12), dp(4), dp(12));
-            startContent.addView(hint);
-        }
-
-        // Pie: ajustes y flecha hacia la lista, como en Windows Phone.
-        LinearLayout footer = new LinearLayout(this);
-        footer.setGravity(Gravity.CENTER_VERTICAL);
-        footer.setPadding(dp(4), dp(16), dp(4), 0);
-        TextView dots = text("• • •", 20, WHITE);
-        dots.setPadding(0, dp(8), dp(24), dp(8));
-        dots.setOnClickListener(v -> showSettings());
-        footer.addView(dots);
-        View spacer = new View(this);
-        footer.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        TextView all = text("todas las apps", 16, WHITE);
-        all.setPadding(0, 0, dp(12), 0);
-        footer.addView(all);
-        TextView arrow = text("→", 22, WHITE);
-        arrow.setGravity(Gravity.CENTER);
-        arrow.setBackground(roundOutline());
-        footer.addView(arrow, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        footer.setOnClickListener(v -> showList());
-        dots.setClickable(true);
-        startContent.addView(footer);
+        return clock;
     }
 
-    private View tile(AppEntry a, boolean wide) {
-        FrameLayout t = new FrameLayout(this);
-        t.setBackgroundColor(WHITE);
+    private View buildWeatherTile() {
+        LinearLayout w = new LinearLayout(this);
+        w.setGravity(Gravity.CENTER_VERTICAL);
+        w.setPadding(dp(10), dp(10), dp(14), dp(10));
+        w.setBackground(outline(BLACK, WHITE, 2));
+        weatherPixels = new PixelWeatherView(this);
+        w.addView(weatherPixels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.1f));
 
-        TextView mono = text(a.initial(), wide ? 52 : 48, BLACK);
-        FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-        t.addView(mono, mp);
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        weatherTemp = text("", 46, WHITE);
+        weatherTemp.setIncludeFontPadding(false);
+        weatherTemp.setGravity(Gravity.END);
+        weatherDesc = text("", 15, WHITE);
+        weatherDesc.setGravity(Gravity.END);
+        weatherSub = text("", 12, GRAY);
+        weatherSub.setGravity(Gravity.END);
+        info.addView(weatherTemp);
+        info.addView(weatherDesc);
+        info.addView(weatherSub);
+        w.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView label = text(a.lower, 13, BLACK);
-        label.setTypeface(Typeface.DEFAULT);
-        label.setSingleLine(true);
-        label.setEllipsize(TextUtils.TruncateAt.END);
+        w.setOnClickListener(v -> {
+            if (prefs.weatherMode().isEmpty()) weatherSetup();
+            else refreshWeather(true);
+        });
+        w.setOnLongClickListener(v -> {
+            weatherSetup();
+            return true;
+        });
+        addTilt(w);
+        return w;
+    }
+
+    private Tile makeTile(AppEntry a) {
+        Tile t = new Tile();
+        t.app = a;
+        t.view = new FrameLayout(this);
+
+        t.mono = text(a.initial(), 44, BLACK);
+        t.view.addView(t.mono, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+
+        t.label = text(a.lower, 13, BLACK);
+        t.label.setTypeface(Typeface.DEFAULT);
+        t.label.setSingleLine(true);
+        t.label.setEllipsize(TextUtils.TruncateAt.END);
         FrameLayout.LayoutParams lpLabel = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.START);
         lpLabel.setMargins(dp(8), 0, dp(8), dp(6));
-        t.addView(label, lpLabel);
+        t.view.addView(t.label, lpLabel);
 
-        if (prefs.isDistracting(a.key)) {
-            // Un pequeño reloj de arena recuerda que esta app tiene pausa.
-            TextView mark = text("⧗", 14, BLACK);
-            FrameLayout.LayoutParams mk = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP | Gravity.END);
-            mk.setMargins(0, dp(4), dp(8), 0);
-            t.addView(mark, mk);
-        }
+        // Un pequeño reloj de arena recuerda que esta app tiene pausa.
+        t.mark = text("⧗", 14, BLACK);
+        FrameLayout.LayoutParams mk = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.END);
+        mk.setMargins(0, dp(2), dp(6), 0);
+        t.view.addView(t.mark, mk);
 
-        t.setOnClickListener(v -> requestLaunch(a));
-        t.setOnLongClickListener(v -> {
-            tileMenu(a);
+        t.view.setOnClickListener(v -> requestLaunch(a));
+        t.view.setOnLongClickListener(v -> {
+            startResize(t);
             return true;
         });
-        addTilt(t);
+        t.view.setOnTouchListener((v, e) -> {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX = e.getRawX();
+                    downY = e.getRawY();
+                    v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(80).start();
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (t == resizing) {
+                        onResizeMove(e.getRawX() - downX, e.getRawY() - downY);
+                        return true;
+                    }
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(120).start();
+                    if (t == resizing) {
+                        boolean menu = e.getActionMasked() == MotionEvent.ACTION_UP
+                                && !resizeMoved && !resizeChanged;
+                        endResize();
+                        if (menu) tileMenu(a);
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
         return t;
+    }
+
+    /** Coloca los mosaicos en la rejilla: cada uno en el primer hueco libre, como en Windows Phone. */
+    private void layoutTiles(boolean animate) {
+        if (grid == null) return;
+        if (animate) TransitionManager.beginDelayedTransition(grid, new ChangeBounds().setDuration(160));
+        List<boolean[]> used = new ArrayList<>();
+        int rows = 0;
+        for (String key : prefs.pinned()) {
+            Tile t = tiles.get(key);
+            if (t == null) continue;
+            int size = prefs.tileSize(key);
+            int w = SIZE_W[size], h = SIZE_H[size];
+            int row = 0, col = 0;
+            search:
+            for (row = 0; ; row++) {
+                for (col = 0; col + w <= COLS; col++) {
+                    if (fits(used, row, col, w, h)) break search;
+                }
+            }
+            for (int r = row; r < row + h; r++) {
+                for (int c = col; c < col + w; c++) used.get(r)[c] = true;
+            }
+            rows = Math.max(rows, row + h);
+
+            FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) t.view.getLayoutParams();
+            p.width = w * cell + (w - 1) * gap;
+            p.height = h * cell + (h - 1) * gap;
+            p.leftMargin = col * (cell + gap);
+            p.topMargin = row * (cell + gap);
+            t.view.setLayoutParams(p);
+            styleTile(t, size);
+        }
+        ViewGroup.LayoutParams gp = grid.getLayoutParams();
+        gp.height = rows * (cell + gap);
+        grid.setLayoutParams(gp);
+    }
+
+    private static boolean fits(List<boolean[]> used, int row, int col, int w, int h) {
+        while (used.size() < row + h) used.add(new boolean[COLS]);
+        for (int r = row; r < row + h; r++) {
+            for (int c = col; c < col + w; c++) {
+                if (used.get(r)[c]) return false;
+            }
+        }
+        return true;
+    }
+
+    private void styleTile(Tile t, int size) {
+        boolean black = prefs.isBlackTile(t.app.key);
+        int fg = black ? WHITE : BLACK;
+        t.view.setBackground(black ? outline(BLACK, WHITE, 2) : solid(WHITE));
+        t.mono.setTextColor(fg);
+        t.label.setTextColor(fg);
+        t.mark.setTextColor(fg);
+        t.mono.setTextSize(TypedValue.COMPLEX_UNIT_SP, new int[]{24, 44, 52, 80}[size]);
+        t.label.setVisibility(size == Prefs.SMALL ? View.GONE : View.VISIBLE);
+        t.mark.setVisibility(prefs.isDistracting(t.app.key) && size != Prefs.SMALL ? View.VISIBLE : View.GONE);
+    }
+
+    // ---- redimensionar: mantener pulsado y deslizar ----
+
+    private void startResize(Tile t) {
+        resizing = t;
+        resizeStart = prefs.tileSize(t.app.key);
+        resizeMoved = false;
+        resizeChanged = false;
+        t.view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        t.view.getParent().requestDisallowInterceptTouchEvent(true);
+        for (Tile other : tiles.values()) {
+            if (other != t) other.view.animate().alpha(0.4f).setDuration(120).start();
+        }
+        t.view.animate().scaleX(1.04f).scaleY(1.04f).setDuration(100).start();
+    }
+
+    /** Hacia la derecha/abajo agranda, hacia la izquierda/arriba achica. */
+    private void onResizeMove(float dx, float dy) {
+        if (Math.abs(dx) + Math.abs(dy) > dp(12)) resizeMoved = true;
+        int steps = (int) ((dx + dy) / (cell + gap));
+        int target = Math.max(Prefs.SMALL, Math.min(Prefs.LARGE, resizeStart + steps));
+        String key = resizing.app.key;
+        if (target == prefs.tileSize(key)) return;
+        prefs.setTileSize(key, target);
+        prefs.setHintSeen();
+        resizeChanged = true;
+        resizing.view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+        layoutTiles(true);
+    }
+
+    private void endResize() {
+        for (Tile other : tiles.values()) other.view.animate().alpha(1f).setDuration(120).start();
+        boolean changed = resizeChanged;
+        resizing = null;
+        if (changed) {
+            // Quitar la pista una vez aprendido el gesto.
+            handler.post(this::renderStart);
+        }
     }
 
     private void updateClock() {
@@ -365,6 +569,192 @@ public class MainActivity extends Activity {
         int avoided = prefs.avoided();
         clockStats.setText("hoy: " + total + (total == 1 ? " apertura" : " aperturas")
                 + (avoided > 0 ? "  ·  " + avoided + (avoided == 1 ? " impulso evitado" : " impulsos evitados") : ""));
+    }
+
+    // ------------------------------------------------------------------ clima
+
+    private static final long WEATHER_MAX_AGE = 30 * 60 * 1000L;
+    private static final int REQ_LOCATION = 7;
+
+    private void updateWeather() {
+        if (weatherTemp == null) return;
+        Weather.Data d = prefs.loadWeather();
+        if (prefs.weatherMode().isEmpty()) {
+            weatherPixels.setScene(Weather.UNKNOWN, true);
+            weatherTemp.setText("clima");
+            weatherDesc.setText("toca para configurar");
+            weatherSub.setText("");
+        } else if (d == null) {
+            weatherPixels.setScene(Weather.UNKNOWN, true);
+            weatherTemp.setText("--°");
+            weatherDesc.setText(weatherLoading ? "cargando…" : "sin datos");
+            weatherSub.setText(prefs.weatherCity());
+        } else {
+            weatherPixels.setScene(Weather.scene(d.code), d.day);
+            weatherTemp.setText(Math.round(d.temp) + "°");
+            weatherDesc.setText(Weather.describe(d.code));
+            String city = prefs.weatherCity();
+            weatherSub.setText((city.isEmpty() ? "" : city + "  ·  ")
+                    + "↑" + Math.round(d.max) + "°  ↓" + Math.round(d.min) + "°");
+        }
+    }
+
+    private void refreshWeather(boolean force) {
+        String mode = prefs.weatherMode();
+        if (mode.isEmpty() || weatherLoading) return;
+        Weather.Data cached = prefs.loadWeather();
+        long now = System.currentTimeMillis();
+        if (!force && cached != null && now - cached.time < WEATHER_MAX_AGE) return;
+        // Sin internet no reintentar más de una vez cada 2 minutos.
+        if (!force && now - weatherLastTry < 2 * 60 * 1000L) return;
+        weatherLastTry = now;
+        final boolean gps = "gps".equals(mode);
+        if (gps) {
+            Location l = lastLocation();
+            if (l != null) prefs.setWeatherPlace("gps", l.getLatitude(), l.getLongitude());
+        }
+        final double lat = prefs.weatherLat(), lon = prefs.weatherLon();
+        weatherLoading = true;
+        updateWeather();
+        io.execute(() -> {
+            Weather.Data d = null;
+            try {
+                d = Weather.fetch(lat, lon);
+            } catch (Exception ignored) {
+                // Sin red: se queda el último dato guardado.
+            }
+            String city = gps ? cityName(lat, lon) : null;
+            final Weather.Data fd = d;
+            handler.post(() -> {
+                weatherLoading = false;
+                if (fd != null) prefs.saveWeather(fd);
+                if (city != null) prefs.setWeatherCity(city);
+                updateWeather();
+                if (fd == null && force) toast("no se pudo actualizar el clima");
+            });
+        });
+    }
+
+    private void weatherSetup() {
+        String[] items = {"usar mi ubicación", "escribir una ciudad", "actualizar ahora"};
+        dialog().setTitle("clima").setItems(items, (d, which) -> {
+            if (which == 0) useMyLocation();
+            else if (which == 1) askCity();
+            else refreshWeather(true);
+        }).show();
+    }
+
+    private void useMyLocation() {
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
+            return;
+        }
+        locateNow();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code != REQ_LOCATION) return;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) locateNow();
+        else askCity();
+    }
+
+    private void locateNow() {
+        Location l = lastLocation();
+        if (l != null) {
+            setGpsPlace(l);
+            return;
+        }
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        try {
+            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, new LocationListener() {
+                @Override public void onLocationChanged(Location loc) { setGpsPlace(loc); }
+                @Override public void onStatusChanged(String p, int s, Bundle b) { }
+                @Override public void onProviderEnabled(String p) { }
+                @Override public void onProviderDisabled(String p) { }
+            }, Looper.getMainLooper());
+            toast("buscando tu ubicación…");
+        } catch (Exception e) {
+            toast("activa la ubicación o escribe una ciudad");
+            askCity();
+        }
+    }
+
+    private void setGpsPlace(Location l) {
+        prefs.setWeatherPlace("gps", l.getLatitude(), l.getLongitude());
+        prefs.setWeatherCity("");
+        prefs.clearWeatherData();
+        refreshWeather(true);
+    }
+
+    private Location lastLocation() {
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return null;
+        }
+        LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        Location best = null;
+        try {
+            for (String provider : lm.getProviders(true)) {
+                Location l = lm.getLastKnownLocation(provider);
+                if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
+            }
+        } catch (SecurityException ignored) {
+            return null;
+        }
+        return best;
+    }
+
+    /** Nombre de la ciudad para unas coordenadas (bloqueante). */
+    private String cityName(double lat, double lon) {
+        try {
+            List<Address> list = new Geocoder(this, new Locale("es")).getFromLocation(lat, lon, 1);
+            if (list != null && !list.isEmpty()) {
+                Address a = list.get(0);
+                if (a.getLocality() != null) return a.getLocality();
+                if (a.getSubAdminArea() != null) return a.getSubAdminArea();
+            }
+        } catch (Exception ignored) {
+            // Geocoder no disponible en algunos teléfonos.
+        }
+        return null;
+    }
+
+    private void askCity() {
+        final EditText input = new EditText(this);
+        input.setHint("ciudad");
+        input.setSingleLine(true);
+        input.setText(prefs.weatherCity());
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        box.addView(input);
+        dialog().setTitle("¿de qué ciudad?").setView(box)
+                .setPositiveButton("buscar", (d, w) -> {
+                    final String name = input.getText().toString().trim();
+                    if (name.isEmpty()) return;
+                    io.execute(() -> {
+                        Weather.Place p = null;
+                        try {
+                            p = Weather.geocode(name);
+                        } catch (Exception ignored) {
+                            // Se avisa abajo.
+                        }
+                        final Weather.Place fp = p;
+                        handler.post(() -> {
+                            if (fp == null) {
+                                toast("no encontré esa ciudad (¿hay internet?)");
+                                return;
+                            }
+                            prefs.setWeatherPlace("city", fp.lat, fp.lon);
+                            prefs.setWeatherCity(fp.name);
+                            prefs.clearWeatherData();
+                            refreshWeather(true);
+                        });
+                    });
+                })
+                .setNegativeButton("cancelar", null).show();
     }
 
     // ------------------------------------------------------------------ lista de apps
@@ -639,8 +1029,10 @@ public class MainActivity extends Activity {
 
     private void tileMenu(AppEntry a) {
         final boolean distracting = prefs.isDistracting(a.key);
+        final int size = prefs.tileSize(a.key);
         String[] items = {
-                prefs.isWide(a.key) ? "hacer mediano" : "hacer ancho",
+                prefs.isBlackTile(a.key) ? "hacer blanco" : "hacer negro",
+                "tamaño: " + SIZE_NAMES[size] + " → " + SIZE_NAMES[(size + 1) % SIZE_NAMES.length],
                 "mover antes",
                 "mover después",
                 distracting ? "quitar pausa" : "poner pausa (app distractora)",
@@ -648,11 +1040,12 @@ public class MainActivity extends Activity {
         };
         dialog().setTitle(a.lower).setItems(items, (d, which) -> {
             switch (which) {
-                case 0: prefs.toggleWide(a.key); break;
-                case 1: move(a.key, -1); break;
-                case 2: move(a.key, 1); break;
-                case 3: prefs.toggleDistracting(a.key); break;
-                case 4: prefs.togglePinned(a.key); break;
+                case 0: prefs.toggleBlackTile(a.key); break;
+                case 1: prefs.setTileSize(a.key, (size + 1) % SIZE_NAMES.length); break;
+                case 2: move(a.key, -1); break;
+                case 3: move(a.key, 1); break;
+                case 4: prefs.toggleDistracting(a.key); break;
+                case 5: prefs.togglePinned(a.key); break;
                 default: break;
             }
             refresh();
@@ -854,6 +1247,16 @@ public class MainActivity extends Activity {
         g.setColor(fill);
         g.setStroke(dp(strokeDp), stroke);
         return g;
+    }
+
+    private GradientDrawable solid(int fill) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(fill);
+        return g;
+    }
+
+    private void toast(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
     private GradientDrawable roundOutline() {

@@ -48,12 +48,35 @@ final class Prefs {
         setPinned(l);
     }
 
-    boolean isWide(String key) {
-        return set("wide").contains(key);
+    static final int SMALL = 0;
+    static final int MEDIUM = 1;
+    static final int WIDE = 2;
+    static final int LARGE = 3;
+
+    int tileSize(String key) {
+        // Compatibilidad: la primera versión solo guardaba qué mosaicos eran anchos.
+        int legacy = set("wide").contains(key) ? WIDE : MEDIUM;
+        return p.getInt("size:" + key, legacy);
     }
 
-    void toggleWide(String key) {
-        toggle("wide", key);
+    void setTileSize(String key, int size) {
+        p.edit().putInt("size:" + key, size).apply();
+    }
+
+    boolean isBlackTile(String key) {
+        return set("black").contains(key);
+    }
+
+    void toggleBlackTile(String key) {
+        toggle("black", key);
+    }
+
+    boolean isHintSeen() {
+        return p.getBoolean("hint_resize", false);
+    }
+
+    void setHintSeen() {
+        p.edit().putBoolean("hint_resize", true).apply();
     }
 
     // ---- anti-adicción ----
@@ -84,6 +107,62 @@ final class Prefs {
 
     void setPauseSeconds(int s) {
         p.edit().putInt("pause", s).apply();
+    }
+
+    // ---- clima ----
+
+    /** "" sin configurar, "gps" ubicación del teléfono, "city" ciudad escrita. */
+    String weatherMode() {
+        return p.getString("w_mode", "");
+    }
+
+    double weatherLat() {
+        return Double.longBitsToDouble(p.getLong("w_lat", 0));
+    }
+
+    double weatherLon() {
+        return Double.longBitsToDouble(p.getLong("w_lon", 0));
+    }
+
+    String weatherCity() {
+        return p.getString("w_city", "");
+    }
+
+    void setWeatherPlace(String mode, double lat, double lon) {
+        p.edit().putString("w_mode", mode)
+                .putLong("w_lat", Double.doubleToLongBits(lat))
+                .putLong("w_lon", Double.doubleToLongBits(lon))
+                .apply();
+    }
+
+    void setWeatherCity(String city) {
+        p.edit().putString("w_city", city).apply();
+    }
+
+    void clearWeatherData() {
+        p.edit().remove("w_time").apply();
+    }
+
+    void saveWeather(Weather.Data d) {
+        p.edit().putFloat("w_temp", (float) d.temp)
+                .putFloat("w_max", (float) d.max)
+                .putFloat("w_min", (float) d.min)
+                .putInt("w_code", d.code)
+                .putBoolean("w_day", d.day)
+                .putLong("w_time", d.time)
+                .apply();
+    }
+
+    Weather.Data loadWeather() {
+        if (!p.contains("w_time")) return null;
+        Weather.Data d = new Weather.Data();
+        d.temp = p.getFloat("w_temp", 0);
+        d.max = p.getFloat("w_max", 0);
+        d.min = p.getFloat("w_min", 0);
+        d.code = p.getInt("w_code", 0);
+        d.day = p.getBoolean("w_day", true);
+        d.time = p.getLong("w_time", 0);
+        return d;
     }
 
     // ---- contadores de hoy ----
