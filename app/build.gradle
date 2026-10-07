@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.juan.monocromo'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.juan.monocromo'
+        minSdk 21
+        targetSdk 34
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer)
+        versionName '1.0'
+    }
+
+    // Clave fija para que cada nueva APK se instale encima de la anterior.
+    signingConfigs {
+        release {
+            storeFile file('monocromo.jks')
+            storePassword 'monocromo'
+            keyAlias 'monocromo'
+            keyPassword 'monocromo'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
