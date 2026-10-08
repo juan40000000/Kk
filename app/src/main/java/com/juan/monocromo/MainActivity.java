@@ -194,6 +194,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         loadApps();
+        pinBrowserOnce();
         renderStart();
         adapter.rebuild(search.getText().toString());
         NotifListener.onChange = () -> updateLiveTiles(false);
@@ -249,7 +250,8 @@ public class MainActivity extends Activity {
         apps.clear();
         byKey.clear();
         for (ResolveInfo ri : found) {
-            if (ri.activityInfo == null || getPackageName().equals(ri.activityInfo.packageName)) continue;
+            // Este launcher no aparece en la lista; su navegador Calamuchita sí.
+            if (ri.activityInfo == null || MainActivity.class.getName().equals(ri.activityInfo.name)) continue;
             CharSequence l = ri.loadLabel(pm);
             AppEntry a = new AppEntry(l == null ? ri.activityInfo.packageName : l.toString().trim(),
                     new ComponentName(ri.activityInfo.packageName, ri.activityInfo.name));
@@ -264,6 +266,17 @@ public class MainActivity extends Activity {
             if (xs != ys) return xs ? -1 : 1;
             return collator.compare(x.lower, y.lower);
         });
+    }
+
+    /** La primera vez, ancla Calamuchita como mosaico ancho negro. */
+    private void pinBrowserOnce() {
+        if (prefs.isBrowserPinnedOnce()) return;
+        String key = new ComponentName(this, BrowserActivity.class).flattenToString();
+        if (!byKey.containsKey(key)) return;
+        if (!prefs.isPinned(key)) prefs.togglePinned(key);
+        prefs.setTileSize(key, Prefs.WIDE);
+        if (!prefs.isBlackTile(key)) prefs.toggleBlackTile(key);
+        prefs.setBrowserPinnedOnce();
     }
 
     private void requestLaunch(AppEntry a) {
@@ -590,8 +603,16 @@ public class MainActivity extends Activity {
         int fg = black ? WHITE : BLACK;
         t.view.setBackground(black ? outline(BLACK, WHITE, 2) : solid(WHITE));
         for (TextView v : new TextView[]{t.mono, t.label, t.mark, t.big, t.line, t.backLabel}) v.setTextColor(fg);
-        t.mono.setTextSize(TypedValue.COMPLEX_UNIT_SP, new int[]{24, 44, 52, 80}[size]);
-        t.label.setVisibility(size == Prefs.SMALL ? View.GONE : View.VISIBLE);
+        boolean small = size == Prefs.SMALL;
+        t.mono.setTextSize(TypedValue.COMPLEX_UNIT_SP, new int[]{20, 44, 52, 80}[size]);
+        // En los pequeños la inicial sube un poco para dejar sitio al nombre.
+        FrameLayout.LayoutParams mp = (FrameLayout.LayoutParams) t.mono.getLayoutParams();
+        mp.bottomMargin = small ? dp(12) : 0;
+        t.mono.setLayoutParams(mp);
+        t.label.setTextSize(TypedValue.COMPLEX_UNIT_SP, small ? 10 : 13);
+        FrameLayout.LayoutParams lpl = (FrameLayout.LayoutParams) t.label.getLayoutParams();
+        lpl.setMargins(small ? dp(4) : dp(8), 0, small ? dp(4) : dp(8), small ? dp(3) : dp(6));
+        t.label.setLayoutParams(lpl);
         t.big.setTextSize(TypedValue.COMPLEX_UNIT_SP, new int[]{14, 18, 22, 28}[size]);
         t.big.setMaxLines(size == Prefs.LARGE ? 3 : 2);
         t.line.setMaxLines(new int[]{1, 2, 2, 8}[size]);

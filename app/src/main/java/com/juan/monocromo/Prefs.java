@@ -71,6 +71,14 @@ final class Prefs {
         toggle("black", key);
     }
 
+    boolean isBrowserPinnedOnce() {
+        return p.getBoolean("browser_pinned", false);
+    }
+
+    void setBrowserPinnedOnce() {
+        p.edit().putBoolean("browser_pinned", true).apply();
+    }
+
     boolean isHintSeen() {
         return p.getBoolean("hint_resize", false);
     }

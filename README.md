@@ -19,7 +19,7 @@ Cada cambio que se sube al repositorio compila una APK nueva automáticamente
 - **Inicio**: arriba, fijos y en la misma fila, el **reloj** y el **clima**, los dos animados
   en pixel art de 8 bits: el reloj con dígitos de 8 bits, dos puntos que parpadean y barra
   de segundos; el clima con sol, luna y estrellas, nubes, lluvia, nieve, tormenta o niebla.
-- **Mosaicos**: mantén pulsado un mosaico y **desliza** hacia la derecha/abajo para agrandarlo
+- **Mosaicos**: todos muestran el nombre de la app, también los pequeños. Mantén pulsado un mosaico y **desliza** hacia la derecha/abajo para agrandarlo
   o hacia la izquierda/arriba para achicarlo (pequeño, mediano, ancho, grande), como en
   Windows Phone. Si lo mantienes pulsado y sueltas sin deslizar, sale el menú: **color
   blanco/negro**, tamaño, bloquear, pausa, mover o desanclar. Al anclar desde la lista
@@ -39,6 +39,19 @@ Cada cambio que se sube al repositorio compila una APK nueva automáticamente
 - **Mantén pulsada una app** de la lista: anclar a inicio, poner pausa, ocultar,
   información o desinstalar.
 - **Toca el reloj**: uso de hoy. **Mantén pulsado el reloj** o `• • •`: ajustes.
+
+## Calamuchita (navegador)
+
+Navegador incluido en la misma APK, con el **motor de Firefox** (GeckoView). Aparece como app
+propia ("Calamuchita") y la primera vez se ancla en inicio como mosaico ancho negro.
+
+- Barra de direcciones **abajo**, como Safari: muestra solo el dominio; tócala para buscar
+  o escribir una dirección (DuckDuckGo o Google, se cambia en `•••`).
+- **Pestañas en mosaico**: la actual en blanco y las demás en negro; ✕ para cerrar.
+- **Página de inicio** minimalista con **favoritos en mosaico** (blancos o negros; mantén
+  pulsado para cambiar el color o eliminar).
+- Puede ser el navegador predeterminado del teléfono (abre los enlaces de otras apps).
+- Solo para teléfonos de 64 bits (arm64) y Android 8 o superior.
 
 ## Anti-adicción
 

@@ -21,6 +21,7 @@ jobs:
       - name: Compilar
         run: |
           chmod +x gradlew
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon | grep -m1 "geckoview" || true
           ./gradlew assembleRelease --no-daemon --stacktrace
           cp app/build/outputs/apk/release/app-release.apk Monocromo.apk
 

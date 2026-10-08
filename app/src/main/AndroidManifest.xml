@@ -41,6 +41,30 @@
             </intent-filter>
         </activity>
 
+        <!-- Calamuchita: navegador con motor de Firefox, en su propio proceso y tarea. -->
+        <activity
+            android:name=".BrowserActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density"
+            android:exported="true"
+            android:icon="@drawable/ic_calamuchita"
+            android:label="Calamuchita"
+            android:launchMode="singleTask"
+            android:process=":calamuchita"
+            android:taskAffinity="com.juan.monocromo.calamuchita"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
+
         <!-- Notificaciones en los mosaicos dinámicos (el usuario lo activa en ajustes). -->
         <service
             android:name=".NotifListener"
