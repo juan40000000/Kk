@@ -3,15 +3,15 @@ plugins {
 }
 
 android {
-    namespace 'com.juan.monocromo'
-    compileSdk 36
+    namespace = 'com.juan.monocromo'
+    compileSdk = 37
 
     defaultConfig {
-        applicationId 'com.juan.monocromo'
-        minSdk 26
-        targetSdk 34
-        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer)
-        versionName '1.0'
+        applicationId = 'com.juan.monocromo'
+        minSdk = 26
+        targetSdk = 34
+        versionCode = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+        versionName = '1.0'
         // Solo 64 bits (casi todos los Android actuales): el motor de Firefox ocupa mucho.
         ndk {
             abiFilters 'arm64-v8a'
@@ -21,28 +21,28 @@ android {
     // Clave fija para que cada nueva APK se instale encima de la anterior.
     signingConfigs {
         release {
-            storeFile file('monocromo.jks')
-            storePassword 'monocromo'
-            keyAlias 'monocromo'
-            keyPassword 'monocromo'
+            storeFile = file('monocromo.jks')
+            storePassword = 'monocromo'
+            keyAlias = 'monocromo'
+            keyPassword = 'monocromo'
         }
     }
 
     buildTypes {
         release {
-            minifyEnabled false
-            signingConfig signingConfigs.release
+            minifyEnabled = false
+            signingConfig = signingConfigs.release
         }
     }
 
     lint {
-        checkReleaseBuilds false
-        abortOnError false
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 }
 
