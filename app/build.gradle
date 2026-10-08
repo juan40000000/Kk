@@ -35,6 +35,13 @@ android {
         }
     }
 
+    // Comprimir las librerías nativas (el motor de Firefox): la APK pesa mucho menos al descargarla.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     lint {
         checkReleaseBuilds = false
         abortOnError = false
