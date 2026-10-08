@@ -16,13 +16,19 @@ Cada cambio que se sube al repositorio compila una APK nueva automáticamente
 
 ## Cómo se usa
 
-- **Inicio**: arriba, fijos, el **reloj** y el **clima** (con animación pixel art de 8 bits
-  según el tiempo: sol, luna y estrellas, nubes, lluvia, nieve, tormenta o niebla).
-  Debajo, los mosaicos de tus apps, sin iconos.
+- **Inicio**: arriba, fijos y en la misma fila, el **reloj** y el **clima**, los dos animados
+  en pixel art de 8 bits: el reloj con dígitos de 8 bits, dos puntos que parpadean y barra
+  de segundos; el clima con sol, luna y estrellas, nubes, lluvia, nieve, tormenta o niebla.
 - **Mosaicos**: mantén pulsado un mosaico y **desliza** hacia la derecha/abajo para agrandarlo
   o hacia la izquierda/arriba para achicarlo (pequeño, mediano, ancho, grande), como en
-  Windows Phone. Si lo mantienes pulsado y sueltas sin deslizar, sale el menú: **blanco o
-  negro**, tamaño, mover, pausa o desanclar.
+  Windows Phone. Si lo mantienes pulsado y sueltas sin deslizar, sale el menú: **color
+  blanco/negro**, tamaño, bloquear, pausa, mover o desanclar. Al anclar desde la lista
+  también eliges si el mosaico es blanco o negro.
+- **Mosaicos dinámicos**: los mosaicos medianos o más grandes giran cada pocos segundos
+  y muestran información de la app: última notificación, tiempo de uso hoy y veces que
+  la abriste, próxima alarma (app de reloj) o batería (app de ajustes). Hay que dar
+  acceso en `• • •` → *notificaciones en mosaicos* y *tiempo de uso en mosaicos*.
+  Las apps distractoras nunca muestran el contenido de sus notificaciones.
 - **Clima**: toca el mosaico del clima para elegir tu ubicación o escribir una ciudad
   (datos de Open-Meteo, gratis y sin cuenta). Tócalo de nuevo para actualizar; mantenlo
   pulsado para cambiar la ciudad.
@@ -40,6 +46,10 @@ Cada cambio que se sube al repositorio compila una APK nueva automáticamente
 - **Pausa**: marca apps como distractoras (salen en gris). Al abrirlas aparece
   "respira." con una cuenta atrás (5–60 s, configurable) y la pregunta
   *¿es una decisión o un impulso?*. Si eliges *mejor no* cuenta como impulso evitado.
+- **Bloqueo por tiempo**: bloquea una app 15 min, 30 min, 1 h, 2 h, 4 h, 8 h o hasta
+  mañana. Si la quieres desbloquear antes, tienes que esperar mirando la pantalla el tiempo
+  configurado (1 minuto por defecto, de 30 s a 30 min en ajustes); si sales, se reinicia.
+  Nota: el bloqueo funciona desde el launcher; no impide abrirla desde una notificación.
 - **Apps ocultas**: no aparecen en la lista; solo si escribes 3+ letras de su nombre.
 - **Contador diario** en el reloj: aperturas de hoy e impulsos evitados.
 

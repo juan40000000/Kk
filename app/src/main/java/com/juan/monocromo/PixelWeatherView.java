@@ -1,13 +1,9 @@
 package com.juan.monocromo;
 
 import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.os.SystemClock;
-import android.view.View;
 
 /** Animación del clima en pixel art de 8 bits, en blanco y negro. */
-final class PixelWeatherView extends View {
+final class PixelWeatherView extends PixelView {
     private static final int W = 24;
     private static final int H = 16;
     private static final int FRAME_MS = 160;
@@ -39,15 +35,11 @@ final class PixelWeatherView extends View {
     };
     private static final int[][] STARS = {{15, 3}, {19, 6}, {14, 10}, {20, 12}, {17, 1}, {3, 13}, {22, 2}};
 
-    private final boolean[][] px = new boolean[W][H];
-    private final Paint paint = new Paint();
     private int scene = Weather.UNKNOWN;
     private boolean day = true;
-    private boolean inverted;
 
     PixelWeatherView(Context c) {
-        super(c);
-        paint.setAntiAlias(false);
+        super(c, W, H, FRAME_MS);
     }
 
     void setScene(int scene, boolean day) {
@@ -57,38 +49,7 @@ final class PixelWeatherView extends View {
     }
 
     @Override
-    protected void onWindowVisibilityChanged(int visibility) {
-        super.onWindowVisibilityChanged(visibility);
-        if (visibility == VISIBLE) invalidate();
-    }
-
-    @Override
-    protected void onDraw(Canvas c) {
-        int f = (int) ((SystemClock.uptimeMillis() / FRAME_MS) % 100_000);
-        for (boolean[] col : px) java.util.Arrays.fill(col, false);
-        inverted = false;
-        compose(f);
-
-        float size = Math.min(getWidth() / (float) W, getHeight() / (float) H);
-        if (size >= 1) size = (float) Math.floor(size);
-        float ox = (getWidth() - size * W) / 2f;
-        float oy = (getHeight() - size * H) / 2f;
-        if (inverted) {
-            paint.setColor(0xFFFFFFFF);
-            c.drawRect(ox, oy, ox + size * W, oy + size * H, paint);
-            paint.setColor(0xFF000000);
-        } else {
-            paint.setColor(0xFFFFFFFF);
-        }
-        for (int x = 0; x < W; x++) {
-            for (int y = 0; y < H; y++) {
-                if (px[x][y]) c.drawRect(ox + x * size, oy + y * size, ox + (x + 1) * size, oy + (y + 1) * size, paint);
-            }
-        }
-        if (getWindowVisibility() == VISIBLE) postInvalidateDelayed(FRAME_MS);
-    }
-
-    private void compose(int f) {
+    protected void compose(int f) {
         switch (scene) {
             case Weather.CLEAR:
                 if (day) sun(12, 8, f);
@@ -182,22 +143,5 @@ final class PixelWeatherView extends View {
             set(x, y);
             set(x, y + 1);
         }
-    }
-
-    private void sprite(String[] art, int x0, int y0) {
-        for (int y = 0; y < art.length; y++) {
-            for (int x = 0; x < art[y].length(); x++) {
-                if (art[y].charAt(x) == '#') set(x0 + x, y0 + y);
-            }
-        }
-    }
-
-    private void set(int x, int y) {
-        if (x >= 0 && x < W && y >= 0 && y < H) px[x][y] = true;
-    }
-
-    private static int pingPong(int t, int n) {
-        int p = t % (2 * n);
-        return p < n ? p : 2 * n - p;
     }
 }

@@ -101,6 +101,37 @@ final class Prefs {
         toggle("hidden", key);
     }
 
+    /** Hasta cuándo está bloqueada la app (ms), o 0 si no lo está. */
+    long blockedUntil(String key) {
+        long until = p.getLong("block:" + key, 0);
+        return until > System.currentTimeMillis() ? until : 0;
+    }
+
+    void blockUntil(String key, long until) {
+        p.edit().putLong("block:" + key, until).apply();
+    }
+
+    void unblock(String key) {
+        p.edit().remove("block:" + key).apply();
+    }
+
+    /** Segundos que hay que esperar mirando la pantalla para desbloquear antes de tiempo. */
+    int unblockWaitSeconds() {
+        return p.getInt("unblock_wait", 60);
+    }
+
+    void setUnblockWaitSeconds(int s) {
+        p.edit().putInt("unblock_wait", s).apply();
+    }
+
+    boolean liveTiles() {
+        return p.getBoolean("live", true);
+    }
+
+    void setLiveTiles(boolean on) {
+        p.edit().putBoolean("live", on).apply();
+    }
+
     int pauseSeconds() {
         return p.getInt("pause", 10);
     }

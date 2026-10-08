@@ -51,6 +51,7 @@ import android.widget.Toast;
 import java.text.Collator;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -94,7 +95,7 @@ public class MainActivity extends Activity {
     private Runnable overlayCancel;
     private boolean onList;
 
-    private TextView clockTime;
+    private PixelClockView clockPixels;
     private TextView clockDate;
     private TextView clockStats;
 
@@ -117,6 +118,11 @@ public class MainActivity extends Activity {
     private long weatherLastTry;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
+    private LiveData liveData;
+    private boolean notifAccess;
+    private int liveTickCount;
+    private long lastLiveRefresh;
+
     private GestureDetector gestures;
 
     private final Runnable clockTick = new Runnable() {
@@ -124,7 +130,20 @@ public class MainActivity extends Activity {
         public void run() {
             updateClock();
             refreshWeather(false);
+            if (System.currentTimeMillis() - lastLiveRefresh > 60_000) {
+                lastLiveRefresh = System.currentTimeMillis();
+                refreshLiveData();
+            }
             handler.postDelayed(this, 10_000);
+        }
+    };
+
+    /** Cada 4 s: los mosaicos dinámicos giran y se actualizan. */
+    private final Runnable liveTick = new Runnable() {
+        @Override
+        public void run() {
+            updateLiveTiles(true);
+            handler.postDelayed(this, 4_000);
         }
     };
 
@@ -134,6 +153,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = new Prefs(this);
+        liveData = new LiveData(this);
         light = Typeface.create("sans-serif-light", Typeface.NORMAL);
         screenW = getResources().getDisplayMetrics().widthPixels;
         getWindow().setStatusBarColor(BLACK);
@@ -176,13 +196,20 @@ public class MainActivity extends Activity {
         loadApps();
         renderStart();
         adapter.rebuild(search.getText().toString());
+        NotifListener.onChange = () -> updateLiveTiles(false);
+        lastLiveRefresh = 0;
         handler.post(clockTick);
+        handler.postDelayed(liveTick, 4_000);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(clockTick);
+        handler.removeCallbacks(liveTick);
+        NotifListener.onChange = null;
+        // Las esperas (pausa, desbloqueo) solo cuentan mirando la pantalla: al salir se reinician.
+        hideOverlay(true);
     }
 
     @Override
@@ -240,7 +267,8 @@ public class MainActivity extends Activity {
     }
 
     private void requestLaunch(AppEntry a) {
-        if (prefs.isDistracting(a.key) && prefs.pauseSeconds() > 0) showPause(a);
+        if (prefs.blockedUntil(a.key) > 0) showBlocked(a, false);
+        else if (prefs.isDistracting(a.key) && prefs.pauseSeconds() > 0) showPause(a);
         else launch(a);
     }
 
@@ -270,9 +298,15 @@ public class MainActivity extends Activity {
     private static final class Tile {
         AppEntry app;
         FrameLayout view;
+        FrameLayout front;
         TextView mono;
         TextView label;
         TextView mark;
+        LinearLayout back;
+        TextView big;
+        TextView line;
+        TextView backLabel;
+        boolean showingBack;
     }
 
     private void buildStartPage() {
@@ -291,11 +325,17 @@ public class MainActivity extends Activity {
         gap = dp(8);
         int avail = screenW - dp(24);
         cell = (avail - gap * (COLS - 1)) / COLS;
-        int wideH = cell * 2 + gap;
+        int half = cell * 2 + gap;
 
-        startContent.addView(buildClockTile(), lp(avail, wideH, gap));
+        // Reloj y clima en la misma fila, fijos arriba.
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(half, half);
+        cp.rightMargin = gap;
+        top.addView(buildClockTile(), cp);
+        top.addView(buildWeatherTile(), new LinearLayout.LayoutParams(half, half));
+        startContent.addView(top, lp(avail, half, gap));
         updateClock();
-        startContent.addView(buildWeatherTile(), lp(avail, wideH, gap));
         updateWeather();
 
         grid = new FrameLayout(this);
@@ -309,6 +349,7 @@ public class MainActivity extends Activity {
             grid.addView(t.view, new FrameLayout.LayoutParams(cell, cell));
         }
         layoutTiles(false);
+        updateLiveTiles(false);
 
         if (tiles.isEmpty()) {
             TextView hint = text("desliza a la izquierda para ver tus apps.\n"
@@ -316,7 +357,8 @@ public class MainActivity extends Activity {
             hint.setPadding(dp(4), dp(12), dp(4), dp(12));
             startContent.addView(hint);
         } else if (!prefs.isHintSeen()) {
-            TextView hint = text("mantén pulsado un mosaico y desliza para cambiar su tamaño.", 14, GRAY);
+            TextView hint = text("mantén pulsado un mosaico y desliza para cambiar su tamaño. "
+                    + "si sueltas sin deslizar: color, bloqueo y más.", 14, GRAY);
             hint.setPadding(dp(4), dp(4), dp(4), dp(4));
             startContent.addView(hint);
         }
@@ -344,15 +386,17 @@ public class MainActivity extends Activity {
     private View buildClockTile() {
         LinearLayout clock = new LinearLayout(this);
         clock.setOrientation(LinearLayout.VERTICAL);
-        clock.setGravity(Gravity.BOTTOM);
-        clock.setPadding(dp(14), dp(10), dp(14), dp(12));
+        clock.setPadding(dp(10), dp(12), dp(10), dp(8));
         clock.setBackground(outline(BLACK, WHITE, 2));
-        clockTime = text("", 60, WHITE);
-        clockTime.setIncludeFontPadding(false);
-        clockDate = text("", 17, WHITE);
-        clockStats = text("", 13, GRAY);
-        clockStats.setPadding(0, dp(4), 0, 0);
-        clock.addView(clockTime);
+        clockPixels = new PixelClockView(this);
+        clock.addView(clockPixels, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        clockDate = text("", 13, WHITE);
+        clockDate.setSingleLine(true);
+        clockDate.setPadding(dp(2), dp(6), 0, 0);
+        clockStats = text("", 11, GRAY);
+        clockStats.setSingleLine(true);
+        clockStats.setEllipsize(TextUtils.TruncateAt.END);
+        clockStats.setPadding(dp(2), 0, 0, 0);
         clock.addView(clockDate);
         clock.addView(clockStats);
         clock.setOnClickListener(v -> showStats());
@@ -366,26 +410,29 @@ public class MainActivity extends Activity {
 
     private View buildWeatherTile() {
         LinearLayout w = new LinearLayout(this);
-        w.setGravity(Gravity.CENTER_VERTICAL);
-        w.setPadding(dp(10), dp(10), dp(14), dp(10));
+        w.setOrientation(LinearLayout.VERTICAL);
+        w.setPadding(dp(10), dp(10), dp(10), dp(8));
         w.setBackground(outline(BLACK, WHITE, 2));
         weatherPixels = new PixelWeatherView(this);
-        w.addView(weatherPixels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.1f));
+        w.addView(weatherPixels, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        LinearLayout info = new LinearLayout(this);
-        info.setOrientation(LinearLayout.VERTICAL);
-        info.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        weatherTemp = text("", 46, WHITE);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.BOTTOM);
+        weatherTemp = text("", 24, WHITE);
         weatherTemp.setIncludeFontPadding(false);
-        weatherTemp.setGravity(Gravity.END);
-        weatherDesc = text("", 15, WHITE);
-        weatherDesc.setGravity(Gravity.END);
-        weatherSub = text("", 12, GRAY);
-        weatherSub.setGravity(Gravity.END);
-        info.addView(weatherTemp);
-        info.addView(weatherDesc);
-        info.addView(weatherSub);
-        w.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(weatherTemp);
+        weatherDesc = text("", 12, WHITE);
+        weatherDesc.setSingleLine(true);
+        weatherDesc.setEllipsize(TextUtils.TruncateAt.END);
+        weatherDesc.setPadding(dp(6), 0, 0, dp(2));
+        row.addView(weatherDesc, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.setPadding(dp(2), dp(4), 0, 0);
+        w.addView(row);
+        weatherSub = text("", 11, GRAY);
+        weatherSub.setSingleLine(true);
+        weatherSub.setEllipsize(TextUtils.TruncateAt.END);
+        weatherSub.setPadding(dp(2), 0, 0, 0);
+        w.addView(weatherSub);
 
         w.setOnClickListener(v -> {
             if (prefs.weatherMode().isEmpty()) weatherSetup();
@@ -403,28 +450,42 @@ public class MainActivity extends Activity {
         Tile t = new Tile();
         t.app = a;
         t.view = new FrameLayout(this);
+        t.view.setCameraDistance(8000 * getResources().getDisplayMetrics().density);
 
+        // Cara delantera: inicial grande y nombre.
+        t.front = new FrameLayout(this);
+        t.view.addView(t.front, match());
         t.mono = text(a.initial(), 44, BLACK);
-        t.view.addView(t.mono, new FrameLayout.LayoutParams(
+        t.front.addView(t.mono, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-
-        t.label = text(a.lower, 13, BLACK);
-        t.label.setTypeface(Typeface.DEFAULT);
-        t.label.setSingleLine(true);
-        t.label.setEllipsize(TextUtils.TruncateAt.END);
-        FrameLayout.LayoutParams lpLabel = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.START);
-        lpLabel.setMargins(dp(8), 0, dp(8), dp(6));
-        t.view.addView(t.label, lpLabel);
-
-        // Un pequeño reloj de arena recuerda que esta app tiene pausa.
-        t.mark = text("⧗", 14, BLACK);
+        t.label = tileLabel(a.lower);
+        t.front.addView(t.label, bottomLabel());
+        // Arriba a la derecha: ⧗ si tiene pausa, o el número de notificaciones.
+        t.mark = text("", 14, BLACK);
         FrameLayout.LayoutParams mk = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.END);
         mk.setMargins(0, dp(2), dp(6), 0);
-        t.view.addView(t.mark, mk);
+        t.front.addView(t.mark, mk);
+
+        // Cara trasera (mosaico dinámico): información de la app.
+        t.back = new LinearLayout(this);
+        t.back.setOrientation(LinearLayout.VERTICAL);
+        t.back.setPadding(dp(8), dp(6), dp(8), dp(6));
+        t.back.setVisibility(View.GONE);
+        t.big = text("", 20, BLACK);
+        t.big.setEllipsize(TextUtils.TruncateAt.END);
+        t.line = text("", 12, BLACK);
+        t.line.setEllipsize(TextUtils.TruncateAt.END);
+        t.backLabel = tileLabel(a.lower);
+        t.backLabel.setPadding(0, dp(4), 0, 0);
+        t.back.addView(t.big);
+        t.back.addView(t.line);
+        t.back.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1f));
+        t.back.addView(t.backLabel);
+        // El espaciador empuja la etiqueta abajo; el texto queda arriba.
+        t.back.setGravity(Gravity.TOP);
+        t.view.addView(t.back, match());
 
         t.view.setOnClickListener(v -> requestLaunch(a));
         t.view.setOnLongClickListener(v -> {
@@ -460,6 +521,22 @@ public class MainActivity extends Activity {
             return false;
         });
         return t;
+    }
+
+    private TextView tileLabel(String s) {
+        TextView l = text(s, 13, BLACK);
+        l.setTypeface(Typeface.DEFAULT);
+        l.setSingleLine(true);
+        l.setEllipsize(TextUtils.TruncateAt.END);
+        return l;
+    }
+
+    private FrameLayout.LayoutParams bottomLabel() {
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.START);
+        p.setMargins(dp(8), 0, dp(8), dp(6));
+        return p;
     }
 
     /** Coloca los mosaicos en la rejilla: cada uno en el primer hueco libre, como en Windows Phone. */
@@ -512,12 +589,82 @@ public class MainActivity extends Activity {
         boolean black = prefs.isBlackTile(t.app.key);
         int fg = black ? WHITE : BLACK;
         t.view.setBackground(black ? outline(BLACK, WHITE, 2) : solid(WHITE));
-        t.mono.setTextColor(fg);
-        t.label.setTextColor(fg);
-        t.mark.setTextColor(fg);
+        for (TextView v : new TextView[]{t.mono, t.label, t.mark, t.big, t.line, t.backLabel}) v.setTextColor(fg);
         t.mono.setTextSize(TypedValue.COMPLEX_UNIT_SP, new int[]{24, 44, 52, 80}[size]);
         t.label.setVisibility(size == Prefs.SMALL ? View.GONE : View.VISIBLE);
-        t.mark.setVisibility(prefs.isDistracting(t.app.key) && size != Prefs.SMALL ? View.VISIBLE : View.GONE);
+        t.big.setTextSize(TypedValue.COMPLEX_UNIT_SP, new int[]{14, 18, 22, 28}[size]);
+        t.big.setMaxLines(size == Prefs.LARGE ? 3 : 2);
+        t.line.setMaxLines(new int[]{1, 2, 2, 8}[size]);
+    }
+
+    // ---- mosaicos dinámicos ----
+
+    /** Actualiza bloqueo, notificaciones e información; si {@code flip}, gira algunos mosaicos. */
+    private void updateLiveTiles(boolean flip) {
+        if (grid == null) return;
+        boolean live = prefs.liveTiles();
+        if (flip) liveTickCount++;
+        int i = 0;
+        for (Tile t : tiles.values()) {
+            String key = t.app.key;
+            int size = prefs.tileSize(key);
+            boolean distracting = prefs.isDistracting(key);
+            long until = prefs.blockedUntil(key);
+            if (until > 0) {
+                // Bloqueada: siempre de frente, apagada y con el tiempo que falta.
+                showFace(t, false, false);
+                t.mono.setAlpha(0.25f);
+                t.label.setText("⊘ " + remaining(until));
+                t.mark.setText(size == Prefs.SMALL ? "⊘" : "");
+                i++;
+                continue;
+            }
+            t.mono.setAlpha(1f);
+            t.label.setText(t.app.lower);
+            LiveData.Info info = live
+                    ? liveData.infoFor(t.app.component.getPackageName(), prefs.launches(key), distracting, notifAccess)
+                    : null;
+            t.mark.setText(distracting ? "⧗" : info != null && info.badge > 0 ? String.valueOf(info.badge) : "");
+            if (info == null || size == Prefs.SMALL) {
+                showFace(t, false, flip);
+            } else {
+                t.big.setText(info.big);
+                t.line.setText(info.line);
+                t.line.setVisibility(info.line.isEmpty() ? View.GONE : View.VISIBLE);
+                // Escalonado: no giran todos a la vez.
+                if (flip && resizing == null && (liveTickCount + i) % 3 == 0) showFace(t, !t.showingBack, true);
+            }
+            i++;
+        }
+    }
+
+    private void showFace(Tile t, boolean back, boolean animate) {
+        if (t.showingBack == back) return;
+        t.showingBack = back;
+        Runnable swap = () -> {
+            t.front.setVisibility(back ? View.GONE : View.VISIBLE);
+            t.back.setVisibility(back ? View.VISIBLE : View.GONE);
+        };
+        if (!animate) {
+            swap.run();
+            return;
+        }
+        t.view.animate().rotationX(90).setDuration(170).withEndAction(() -> {
+            swap.run();
+            t.view.setRotationX(-90);
+            t.view.animate().rotationX(0).setDuration(170).start();
+        }).start();
+    }
+
+    private void refreshLiveData() {
+        notifAccess = NotifListener.isEnabled(this);
+        io.execute(() -> {
+            liveData.refresh();
+            handler.post(() -> {
+                updateLiveTiles(false);
+                updateClock();
+            });
+        });
     }
 
     // ---- redimensionar: mantener pulsado y deslizar ----
@@ -527,6 +674,7 @@ public class MainActivity extends Activity {
         resizeStart = prefs.tileSize(t.app.key);
         resizeMoved = false;
         resizeChanged = false;
+        showFace(t, false, false);
         t.view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         t.view.getParent().requestDisallowInterceptTouchEvent(true);
         for (Tile other : tiles.values()) {
@@ -560,15 +708,24 @@ public class MainActivity extends Activity {
     }
 
     private void updateClock() {
-        if (clockTime == null) return;
+        if (clockPixels == null) return;
         Date now = new Date();
-        clockTime.setText(android.text.format.DateFormat.getTimeFormat(this).format(now));
-        clockDate.setText(new SimpleDateFormat("EEEE, d 'de' MMMM", new Locale("es"))
-                .format(now).toLowerCase(Locale.getDefault()));
+        clockPixels.set24h(android.text.format.DateFormat.is24HourFormat(this));
+        clockDate.setText(new SimpleDateFormat("EEE d 'de' MMM", new Locale("es"))
+                .format(now).toLowerCase(Locale.getDefault()).replace(".", ""));
         int total = prefs.totalLaunches();
         int avoided = prefs.avoided();
-        clockStats.setText("hoy: " + total + (total == 1 ? " apertura" : " aperturas")
-                + (avoided > 0 ? "  ·  " + avoided + (avoided == 1 ? " impulso evitado" : " impulsos evitados") : ""));
+        String stats = LiveData.hasUsageAccess(this)
+                ? "pantalla " + LiveData.duration(liveData.screenMs / 60_000)
+                : total + (total == 1 ? " apertura" : " aperturas");
+        if (avoided > 0) stats += " · " + avoided + " evitados";
+        clockStats.setText(stats);
+    }
+
+    /** "1 h 20 min" que faltan hasta {@code until}. */
+    private static String remaining(long until) {
+        long min = Math.max(1, (until - System.currentTimeMillis() + 59_999) / 60_000);
+        return LiveData.duration(min);
     }
 
     // ------------------------------------------------------------------ clima
@@ -582,8 +739,8 @@ public class MainActivity extends Activity {
         if (prefs.weatherMode().isEmpty()) {
             weatherPixels.setScene(Weather.UNKNOWN, true);
             weatherTemp.setText("clima");
-            weatherDesc.setText("toca para configurar");
-            weatherSub.setText("");
+            weatherDesc.setText("");
+            weatherSub.setText("toca para configurar");
         } else if (d == null) {
             weatherPixels.setScene(Weather.UNKNOWN, true);
             weatherTemp.setText("--°");
@@ -895,9 +1052,11 @@ public class MainActivity extends Activity {
                 t.setEllipsize(TextUtils.TruncateAt.END);
                 t.setPadding(dp(2), dp(9), dp(2), dp(9));
             }
-            t.setText(r.app.label.toLowerCase(Locale.getDefault()));
-            // Las apps con pausa se ven en gris: menos llamativas.
-            t.setTextColor(prefs.isDistracting(r.app.key) ? GRAY : WHITE);
+            long until = prefs.blockedUntil(r.app.key);
+            String name = r.app.label.toLowerCase(Locale.getDefault());
+            // Bloqueadas casi invisibles; con pausa en gris: menos llamativas.
+            t.setText(until > 0 ? name + "  ⊘ " + remaining(until) : name);
+            t.setTextColor(until > 0 ? DIM : prefs.isDistracting(r.app.key) ? GRAY : WHITE);
             return t;
         }
     }
@@ -1002,54 +1161,180 @@ public class MainActivity extends Activity {
         });
     }
 
+    // ------------------------------------------------------------------ bloqueo por tiempo
+
+    private static final String[] BLOCK_LABELS = {
+            "15 minutos", "30 minutos", "1 hora", "2 horas", "4 horas", "8 horas", "hasta mañana (6:00)"};
+    private static final long[] BLOCK_MINUTES = {15, 30, 60, 120, 240, 480, -1};
+    private static final int[] UNBLOCK_WAIT_OPTIONS = {30, 60, 120, 300, 600, 1800};
+
+    private void chooseBlock(AppEntry a) {
+        dialog().setTitle("bloquear " + a.lower).setItems(BLOCK_LABELS, (d, which) -> {
+            long until;
+            if (BLOCK_MINUTES[which] > 0) {
+                until = System.currentTimeMillis() + BLOCK_MINUTES[which] * 60_000;
+            } else {
+                Calendar c = Calendar.getInstance();
+                if (c.get(Calendar.HOUR_OF_DAY) >= 6) c.add(Calendar.DAY_OF_YEAR, 1);
+                c.set(Calendar.HOUR_OF_DAY, 6);
+                c.set(Calendar.MINUTE, 0);
+                c.set(Calendar.SECOND, 0);
+                until = c.getTimeInMillis();
+            }
+            prefs.blockUntil(a.key, until);
+            toast(a.lower + " bloqueada hasta las " + timeOf(until));
+            refresh();
+        }).show();
+    }
+
+    /**
+     * Pantalla de app bloqueada. Para desbloquear antes de tiempo hay que esperar
+     * mirándola los segundos configurados; si sales, la cuenta empieza de cero.
+     */
+    private void showBlocked(AppEntry a, boolean fromMenu) {
+        hideKeyboard();
+        final long until = prefs.blockedUntil(a.key);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(32), dp(32), dp(32), dp(32));
+
+        box.addView(text("bloqueada.", 54, WHITE));
+        TextView sub = text(a.lower + " vuelve en " + remaining(until) + " (a las " + timeOf(until) + ").", 20, WHITE);
+        sub.setPadding(0, dp(12), 0, 0);
+        box.addView(sub);
+        final TextView note = text("¿de verdad la necesitas ahora?", 16, GRAY);
+        note.setPadding(0, dp(6), 0, dp(36));
+        box.addView(note);
+
+        final TextView ok = button(fromMenu ? "mantener bloqueada" : "vale, más tarde");
+        final TextView early = button("desbloquear antes");
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        bp.bottomMargin = dp(12);
+        box.addView(ok, bp);
+        box.addView(early, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+
+        final int wait = prefs.unblockWaitSeconds();
+        final int[] left = {-1};
+        final Runnable tick = new Runnable() {
+            @Override
+            public void run() {
+                if (left[0] > 0) {
+                    early.setText("desbloquear (" + clockText(left[0]) + ")");
+                    early.setEnabled(false);
+                    early.setAlpha(0.35f);
+                    left[0]--;
+                    handler.postDelayed(this, 1000);
+                } else {
+                    left[0] = 0;
+                    early.setText(fromMenu ? "desbloquear" : "desbloquear y abrir");
+                    early.setEnabled(true);
+                    early.setAlpha(1f);
+                }
+            }
+        };
+        early.setOnClickListener(v -> {
+            if (left[0] < 0) {
+                // Primer toque: empieza la espera obligatoria.
+                left[0] = wait;
+                note.setText("espera " + clockText(wait) + " sin salir de esta pantalla. si sales, se reinicia.");
+                tick.run();
+            } else if (left[0] == 0) {
+                prefs.unblock(a.key);
+                hideOverlay(false);
+                refresh();
+                if (!fromMenu) launch(a);
+            }
+        });
+        ok.setOnClickListener(v -> hideOverlay(true));
+
+        showOverlay(box, () -> {
+            handler.removeCallbacks(tick);
+            prefs.countAvoided();
+            updateClock();
+        });
+        if (fromMenu) early.performClick();
+    }
+
+    private static String clockText(int seconds) {
+        return seconds >= 60 ? (seconds / 60) + ":" + String.format(Locale.US, "%02d", seconds % 60) : seconds + " s";
+    }
+
+    private String timeOf(long millis) {
+        return android.text.format.DateFormat.getTimeFormat(this).format(new Date(millis));
+    }
+
     // ------------------------------------------------------------------ menús
 
     private void appMenu(AppEntry a) {
         final boolean pinned = prefs.isPinned(a.key);
-        final boolean distracting = prefs.isDistracting(a.key);
-        final boolean hidden = prefs.isHidden(a.key);
-        String[] items = {
-                pinned ? "desanclar de inicio" : "anclar a inicio",
-                distracting ? "quitar pausa" : "poner pausa (app distractora)",
-                hidden ? "mostrar en la lista" : "ocultar de la lista",
-                "información de la app",
-                "desinstalar"
-        };
-        dialog().setTitle(a.lower).setItems(items, (d, which) -> {
-            switch (which) {
-                case 0: prefs.togglePinned(a.key); renderStart(); break;
-                case 1: prefs.toggleDistracting(a.key); refresh(); break;
-                case 2: prefs.toggleHidden(a.key); refresh(); break;
-                case 3: openAppInfo(a); break;
-                case 4: uninstall(a); break;
-                default: break;
-            }
-        }).show();
+        final boolean blocked = prefs.blockedUntil(a.key) > 0;
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        if (pinned) {
+            items.add("desanclar de inicio");
+            actions.add(() -> { prefs.togglePinned(a.key); refresh(); });
+            items.add(prefs.isBlackTile(a.key) ? "color del mosaico: negro → blanco" : "color del mosaico: blanco → negro");
+            actions.add(() -> { prefs.toggleBlackTile(a.key); refresh(); });
+        } else {
+            items.add("anclar a inicio (mosaico blanco)");
+            actions.add(() -> pin(a, false));
+            items.add("anclar a inicio (mosaico negro)");
+            actions.add(() -> pin(a, true));
+        }
+        addCommonActions(a, blocked, items, actions);
+        items.add(prefs.isHidden(a.key) ? "mostrar en la lista" : "ocultar de la lista");
+        actions.add(() -> { prefs.toggleHidden(a.key); refresh(); });
+        items.add("información de la app");
+        actions.add(() -> openAppInfo(a));
+        items.add("desinstalar");
+        actions.add(() -> uninstall(a));
+        showActions(a.lower, items, actions);
     }
 
     private void tileMenu(AppEntry a) {
-        final boolean distracting = prefs.isDistracting(a.key);
         final int size = prefs.tileSize(a.key);
-        String[] items = {
-                prefs.isBlackTile(a.key) ? "hacer blanco" : "hacer negro",
-                "tamaño: " + SIZE_NAMES[size] + " → " + SIZE_NAMES[(size + 1) % SIZE_NAMES.length],
-                "mover antes",
-                "mover después",
-                distracting ? "quitar pausa" : "poner pausa (app distractora)",
-                "desanclar"
-        };
-        dialog().setTitle(a.lower).setItems(items, (d, which) -> {
-            switch (which) {
-                case 0: prefs.toggleBlackTile(a.key); break;
-                case 1: prefs.setTileSize(a.key, (size + 1) % SIZE_NAMES.length); break;
-                case 2: move(a.key, -1); break;
-                case 3: move(a.key, 1); break;
-                case 4: prefs.toggleDistracting(a.key); break;
-                case 5: prefs.togglePinned(a.key); break;
-                default: break;
-            }
+        final boolean blocked = prefs.blockedUntil(a.key) > 0;
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        items.add(prefs.isBlackTile(a.key) ? "color: negro → blanco" : "color: blanco → negro");
+        actions.add(() -> prefs.toggleBlackTile(a.key));
+        items.add("tamaño: " + SIZE_NAMES[size] + " → " + SIZE_NAMES[(size + 1) % SIZE_NAMES.length]);
+        actions.add(() -> prefs.setTileSize(a.key, (size + 1) % SIZE_NAMES.length));
+        addCommonActions(a, blocked, items, actions);
+        items.add("mover antes");
+        actions.add(() -> move(a.key, -1));
+        items.add("mover después");
+        actions.add(() -> move(a.key, 1));
+        items.add("desanclar");
+        actions.add(() -> prefs.togglePinned(a.key));
+        showActions(a.lower, items, actions);
+    }
+
+    /** Bloqueo y pausa: iguales en el menú de la lista y en el del mosaico. */
+    private void addCommonActions(AppEntry a, boolean blocked, List<String> items, List<Runnable> actions) {
+        if (blocked) {
+            items.add("bloqueada " + remaining(prefs.blockedUntil(a.key)) + " · desbloquear antes");
+            actions.add(() -> showBlocked(a, true));
+        } else {
+            items.add("bloquear durante…");
+            actions.add(() -> chooseBlock(a));
+        }
+        items.add(prefs.isDistracting(a.key) ? "quitar pausa" : "poner pausa (app distractora)");
+        actions.add(() -> prefs.toggleDistracting(a.key));
+    }
+
+    private void showActions(String title, List<String> items, List<Runnable> actions) {
+        dialog().setTitle(title).setItems(items.toArray(new String[0]), (d, which) -> {
+            actions.get(which).run();
             refresh();
         }).show();
+    }
+
+    private void pin(AppEntry a, boolean black) {
+        if (!prefs.isPinned(a.key)) prefs.togglePinned(a.key);
+        if (prefs.isBlackTile(a.key) != black) prefs.toggleBlackTile(a.key);
+        toast("anclada a inicio");
     }
 
     private void move(String key, int delta) {
@@ -1063,22 +1348,46 @@ public class MainActivity extends Activity {
 
     private void showSettings() {
         int secs = prefs.pauseSeconds();
-        String[] items = {
-                "pausa antes de apps distractoras: " + (secs == 0 ? "desactivada" : secs + " s"),
-                "uso de hoy",
-                "apps ocultas (" + countHidden() + ")",
-                "elegir launcher predeterminado",
-                "ajustes del teléfono"
-        };
-        dialog().setTitle("ajustes").setItems(items, (d, which) -> {
-            switch (which) {
-                case 0: choosePause(); break;
-                case 1: showStats(); break;
-                case 2: showHidden(); break;
-                case 3: openSettings(Settings.ACTION_HOME_SETTINGS); break;
-                case 4: openSettings(Settings.ACTION_SETTINGS); break;
-                default: break;
-            }
+        boolean notif = NotifListener.isEnabled(this);
+        boolean usage = LiveData.hasUsageAccess(this);
+        List<String> items = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        items.add("pausa antes de apps distractoras: " + (secs == 0 ? "desactivada" : secs + " s"));
+        actions.add(this::choosePause);
+        items.add("espera para desbloquear antes: " + clockText(prefs.unblockWaitSeconds()));
+        actions.add(this::chooseUnblockWait);
+        items.add("mosaicos dinámicos: " + (prefs.liveTiles() ? "activados" : "desactivados"));
+        actions.add(() -> {
+            prefs.setLiveTiles(!prefs.liveTiles());
+            refresh();
+        });
+        items.add("notificaciones en mosaicos: " + (notif ? "✓ permitido" : "dar acceso"));
+        actions.add(() -> openSettings("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+        items.add("tiempo de uso en mosaicos: " + (usage ? "✓ permitido" : "dar acceso"));
+        actions.add(() -> openSettings(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+        items.add("uso de hoy");
+        actions.add(this::showStats);
+        items.add("apps ocultas (" + countHidden() + ")");
+        actions.add(this::showHidden);
+        items.add("elegir launcher predeterminado");
+        actions.add(() -> openSettings(Settings.ACTION_HOME_SETTINGS));
+        items.add("ajustes del teléfono");
+        actions.add(() -> openSettings(Settings.ACTION_SETTINGS));
+        dialog().setTitle("ajustes").setItems(items.toArray(new String[0]),
+                (d, which) -> actions.get(which).run()).show();
+    }
+
+    private void chooseUnblockWait() {
+        String[] labels = new String[UNBLOCK_WAIT_OPTIONS.length];
+        int checked = 0;
+        for (int i = 0; i < labels.length; i++) {
+            int s = UNBLOCK_WAIT_OPTIONS[i];
+            labels[i] = s < 60 ? s + " segundos" : (s / 60) + (s == 60 ? " minuto" : " minutos");
+            if (s == prefs.unblockWaitSeconds()) checked = i;
+        }
+        dialog().setTitle("espera para desbloquear").setSingleChoiceItems(labels, checked, (d, which) -> {
+            prefs.setUnblockWaitSeconds(UNBLOCK_WAIT_OPTIONS[which]);
+            d.dismiss();
         }).show();
     }
 
@@ -1124,6 +1433,9 @@ public class MainActivity extends Activity {
         List<Map.Entry<String, Integer>> sorted = new ArrayList<>(counts.entrySet());
         Collections.sort(sorted, (x, y) -> Integer.compare(y.getValue(), x.getValue()));
         StringBuilder sb = new StringBuilder();
+        if (LiveData.hasUsageAccess(this)) {
+            sb.append("tiempo de pantalla: ").append(LiveData.duration(liveData.screenMs / 60_000)).append('\n');
+        }
         sb.append("aperturas: ").append(prefs.totalLaunches()).append('\n');
         sb.append("impulsos evitados: ").append(prefs.avoided()).append("\n\n");
         int shown = 0;
