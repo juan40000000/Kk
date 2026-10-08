@@ -22,7 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Datos para los mosaicos dinámicos: tiempo de uso, próxima alarma y batería. */
+/** Datos para los mosaicos dinámicos: tiempo de uso, próxima alarma y batería (sin leer notificaciones). */
 final class LiveData {
 
     /** Lo que muestra la cara trasera de un mosaico. */
@@ -143,23 +143,13 @@ final class LiveData {
         return Math.round(level * 100f / scale) + "%" + (charging ? " ⚡" : "");
     }
 
-    /**
-     * Qué mostrar detrás del mosaico de una app, o null si no hay nada.
-     * Las apps distractoras nunca muestran el contenido de sus notificaciones.
-     */
-    Info infoFor(String pkg, int opensToday, boolean distracting, boolean showNotifications) {
-        NotifListener.Info n = showNotifications ? NotifListener.INFO.get(pkg) : null;
-        int badge = n == null || distracting ? 0 : n.count;
-        if (n != null && !distracting) {
-            String big = n.title.isEmpty() ? n.count + (n.count == 1 ? " nueva" : " nuevas") : n.title;
-            String line = n.text + (n.count > 1 ? (n.text.isEmpty() ? "" : "\n") + "+" + (n.count - 1) + " más" : "");
-            return new Info(big, line, badge);
-        }
+    /** Qué mostrar detrás del mosaico de una app, o null si no hay nada. */
+    Info infoFor(String pkg, int opensToday) {
         if (clockPackages.contains(pkg) && !alarm.isEmpty()) {
-            return new Info("⏰ " + alarm, "próxima alarma", badge);
+            return new Info("⏰ " + alarm, "próxima alarma", 0);
         }
         if (pkg.equals(settingsPackage) && !battery.isEmpty()) {
-            return new Info(battery, "batería", badge);
+            return new Info(battery, "batería", 0);
         }
         Long ms = usage.get(pkg);
         long minutes = ms == null ? 0 : ms / 60_000;
@@ -168,9 +158,9 @@ final class LiveData {
             String line = minutes > 0
                     ? "de uso hoy" + (opensToday > 0 ? " · " + opensToday + (opensToday == 1 ? " vez" : " veces") : "")
                     : "abierta hoy";
-            return new Info(big, line, badge);
+            return new Info(big, line, 0);
         }
-        return badge > 0 ? new Info(badge + (badge == 1 ? " nueva" : " nuevas"), "", badge) : null;
+        return null;
     }
 
     static String duration(long minutes) {

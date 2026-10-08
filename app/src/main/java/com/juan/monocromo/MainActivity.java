@@ -119,7 +119,6 @@ public class MainActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
     private LiveData liveData;
-    private boolean notifAccess;
     private int liveTickCount;
     private long lastLiveRefresh;
 
@@ -197,7 +196,6 @@ public class MainActivity extends Activity {
         pinBrowserOnce();
         renderStart();
         adapter.rebuild(search.getText().toString());
-        NotifListener.onChange = () -> updateLiveTiles(false);
         lastLiveRefresh = 0;
         handler.post(clockTick);
         handler.postDelayed(liveTick, 4_000);
@@ -208,7 +206,6 @@ public class MainActivity extends Activity {
         super.onPause();
         handler.removeCallbacks(clockTick);
         handler.removeCallbacks(liveTick);
-        NotifListener.onChange = null;
         // Las esperas (pausa, desbloqueo) solo cuentan mirando la pantalla: al salir se reinician.
         hideOverlay(true);
     }
@@ -643,7 +640,7 @@ public class MainActivity extends Activity {
             t.mono.setAlpha(1f);
             t.label.setText(t.app.lower);
             LiveData.Info info = live
-                    ? liveData.infoFor(t.app.component.getPackageName(), prefs.launches(key), distracting, notifAccess)
+                    ? liveData.infoFor(t.app.component.getPackageName(), prefs.launches(key))
                     : null;
             t.mark.setText(distracting ? "⧗" : info != null && info.badge > 0 ? String.valueOf(info.badge) : "");
             if (info == null || size == Prefs.SMALL) {
@@ -678,7 +675,6 @@ public class MainActivity extends Activity {
     }
 
     private void refreshLiveData() {
-        notifAccess = NotifListener.isEnabled(this);
         io.execute(() -> {
             liveData.refresh();
             handler.post(() -> {
@@ -1369,7 +1365,6 @@ public class MainActivity extends Activity {
 
     private void showSettings() {
         int secs = prefs.pauseSeconds();
-        boolean notif = NotifListener.isEnabled(this);
         boolean usage = LiveData.hasUsageAccess(this);
         List<String> items = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
@@ -1382,8 +1377,6 @@ public class MainActivity extends Activity {
             prefs.setLiveTiles(!prefs.liveTiles());
             refresh();
         });
-        items.add("notificaciones en mosaicos: " + (notif ? "✓ permitido" : "dar acceso"));
-        actions.add(() -> openSettings("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
         items.add("tiempo de uso en mosaicos: " + (usage ? "✓ permitido" : "dar acceso"));
         actions.add(() -> openSettings(Settings.ACTION_USAGE_ACCESS_SETTINGS));
         items.add("uso de hoy");

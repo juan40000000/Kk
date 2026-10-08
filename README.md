@@ -25,10 +25,10 @@ Cada cambio que se sube al repositorio compila una APK nueva automáticamente
   blanco/negro**, tamaño, bloquear, pausa, mover o desanclar. Al anclar desde la lista
   también eliges si el mosaico es blanco o negro.
 - **Mosaicos dinámicos**: los mosaicos medianos o más grandes giran cada pocos segundos
-  y muestran información de la app: última notificación, tiempo de uso hoy y veces que
-  la abriste, próxima alarma (app de reloj) o batería (app de ajustes). Hay que dar
-  acceso en `• • •` → *notificaciones en mosaicos* y *tiempo de uso en mosaicos*.
-  Las apps distractoras nunca muestran el contenido de sus notificaciones.
+  y muestran información de la app: tiempo de uso hoy y veces que la abriste, próxima
+  alarma (app de reloj) o batería (app de ajustes). Para el tiempo de uso hay que dar
+  acceso en `• • •` → *tiempo de uso en mosaicos*. No lee notificaciones: Google Play
+  Protect bloquea las APK instaladas a mano que piden ese permiso.
 - **Clima**: toca el mosaico del clima para elegir tu ubicación o escribir una ciudad
   (datos de Open-Meteo, gratis y sin cuenta). Tócalo de nuevo para actualizar; mantenlo
   pulsado para cambiar la ciudad.
