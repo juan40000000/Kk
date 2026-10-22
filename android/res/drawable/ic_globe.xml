@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Globo con red de nodos y línea de pulso -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#00000000" android:strokeColor="#9F8CFF" android:strokeWidth="2.5"
+        android:pathData="M54,24a30,30 0 1,0 0.01,0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#5B47D6" android:strokeWidth="1.6"
+        android:pathData="M54,24C42,32 42,76 54,84C66,76 66,32 54,24z" />
+    <path android:fillColor="#00000000" android:strokeColor="#5B47D6" android:strokeWidth="1.6"
+        android:pathData="M25,46H83M25,62H83" />
+    <path android:fillColor="#00000000" android:strokeColor="#3BE8B0" android:strokeWidth="3"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M20,56H40L46,44L54,70L61,50L66,56H88" />
+    <path android:fillColor="#FF4D6D" android:pathData="M40,38m-4,0a4,4 0 1,0 8,0a4,4 0 1,0 -8,0" />
+    <path android:fillColor="#3BE8B0" android:pathData="M70,72m-3.5,0a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0" />
+    <path android:fillColor="#FFC857" android:pathData="M72,36m-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0" />
+</vector>
