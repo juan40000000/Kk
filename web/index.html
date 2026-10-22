@@ -31,62 +31,97 @@
     <div class="tape" id="tape"><div class="tape-track" id="tapeTrack"></div></div>
 
     <main>
-      <!-- GLOBO -->
+      <!-- MUNDO -->
       <section class="view active" id="view-globe">
         <canvas id="globe"></canvas>
         <div class="globe-ui">
           <div class="seg" id="projSeg">
-            <button class="on" data-proj="globe">Globo 3D</button>
+            <button class="on" data-proj="globe">3D</button>
             <button data-proj="flat">Mapa</button>
           </div>
           <div class="seg" id="layerSeg">
-            <button class="on" data-layer="links">Conexiones</button>
+            <button class="on" data-layer="links">Arcos</button>
             <button class="on" data-layer="markets">Bolsas</button>
+            <button class="on" data-layer="disasters">Desastres</button>
           </div>
         </div>
         <div class="legend">
           <span><i class="dot red"></i>Conflicto</span>
-          <span><i class="dot up"></i>Sube</span>
-          <span><i class="dot down"></i>Baja</span>
-          <span><i class="line"></i>Impacto</span>
+          <span><i class="dot" style="background:#FFC857"></i>Sismo</span>
+          <span><i class="dot" style="background:#4CC9F0"></i>Ciclón</span>
+          <span><i class="sq up"></i>Bolsa</span>
         </div>
         <div class="hot-strip" id="hotStrip"></div>
       </section>
 
-      <!-- GRAFO -->
-      <section class="view" id="view-graph">
-        <canvas id="graph"></canvas>
+      <!-- NOTICIAS -->
+      <section class="view scroll" id="view-news">
+        <div id="moments"></div>
+        <div class="chips sticky" id="newsFilters"></div>
+        <div id="newsList" class="list"></div>
+      </section>
+
+      <!-- PROYECCIÓN / RED -->
+      <section class="view" id="view-proj">
+        <div class="wrap show" id="projWrap">
+          <canvas id="projCanvas"></canvas>
+          <div class="graph-legend"><span><i class="dot red"></i>Guerra</span><span><i class="hexi"></i>Desastre</span><span><i class="dot" style="background:#A28BFF"></i>Factor</span><span><i class="dia"></i>A favor</span><span><i class="dia down"></i>En contra</span></div>
+          <div class="graph-hint" id="projHint">Eventos → factores → instrumentos IOL · tocá un nodo</div>
+        </div>
+        <div class="wrap" id="connWrap">
+          <canvas id="graph"></canvas>
+          <div class="graph-legend"><span><i class="dot red"></i>Conflicto</span><span><i class="dia"></i>Activo</span><span><i class="hexi"></i>Desastre</span><span><i class="dot" style="background:#A28BFF"></i>Noticia</span></div>
+          <div class="graph-hint" id="graphHint">Tocá un nodo para ver sus conexiones · pellizcá para zoom</div>
+        </div>
         <div class="graph-ui">
-          <div class="chips" id="graphFilters">
+          <div class="row">
+            <div class="seg" id="projModeSeg"><button class="on" data-pm="proj">Proyección</button><button data-pm="conn">Red actual</button></div>
+            <button class="pill" id="rankBtn">Ranking IOL</button>
+          </div>
+          <div class="row only-proj">
+            <div class="seg" id="horizonSeg"><button class="on" data-h="short">Próximos días</button><button data-h="mid">Semanas</button></div>
+          </div>
+          <div class="chips only-conn" id="connFilters">
             <button class="chip on" data-g="conflict">Conflictos</button>
+            <button class="chip on" data-g="disaster">Desastres</button>
             <button class="chip on" data-g="country">Países</button>
             <button class="chip on" data-g="asset">Activos</button>
             <button class="chip on" data-g="news">Noticias</button>
           </div>
         </div>
-        <div class="graph-legend"><span><i class="dot red"></i>Conflicto</span><span><i class="dia"></i>Activo</span><span><i class="dot" style="background:#9AA3BF"></i>País</span><span><i class="dot" style="background:#A28BFF"></i>Noticia</span></div>
-        <div class="graph-hint" id="graphHint">Tocá un nodo para ver sus conexiones · pellizcá para zoom</div>
-      </section>
-
-      <!-- NOTICIAS -->
-      <section class="view scroll" id="view-news">
-        <div class="chips sticky" id="newsFilters"></div>
-        <div id="newsList" class="list"></div>
       </section>
 
       <!-- MERCADOS -->
       <section class="view scroll" id="view-markets">
+        <div class="seg wide" id="mktSeg"><button class="on" data-mkt="arg">Argentina · IOL</button><button data-mkt="world">Mundo</button></div>
         <div class="pulse-card" id="pulseCard"></div>
         <div id="marketList"></div>
-        <p class="fine">Cotizaciones con demora según la plaza. Fuente: Yahoo Finance. No es asesoramiento financiero.</p>
+      </section>
+
+      <!-- EN VIVO -->
+      <section class="view scroll" id="view-live">
+        <h4 class="sec">Fragmentos clave</h4>
+        <div id="liveMoments"></div>
+        <h4 class="sec">Radios en vivo</h4>
+        <div id="radioList"></div>
+        <h4 class="sec">Clips de las últimas horas</h4>
+        <div id="clipList" class="clips"></div>
       </section>
     </main>
 
+    <div class="player" id="player">
+      <span class="pl-logo" id="plLogo"></span>
+      <div class="pl-txt"><b id="plName">Radio</b><small><span class="r-eq"><i></i><i></i><i></i></span><span id="plState">En vivo</span></small></div>
+      <button id="plToggle" class="pl-btn" aria-label="Reproducir o pausar"><svg viewBox="0 0 24 24"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
+      <button id="plClose" class="pl-btn" aria-label="Cerrar">✕</button>
+    </div>
+
     <nav class="tabs">
       <button class="tab on" data-view="globe"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg><span>Mundo</span></button>
-      <button class="tab" data-view="graph"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="17" r="3"/><circle cx="20" cy="17" r="1.6"/><path d="M8 8.5l2.6 6M16.4 7.4L13.4 14.6M15 17h3.4M8.4 7l7.6-.8"/></svg><span>Red</span></button>
       <button class="tab" data-view="news"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h10M7 17h6"/></svg><span>Noticias</span><b class="badge" id="newsBadge"></b></button>
+      <button class="tab" data-view="proj"><svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.2"/><circle cx="12" cy="12" r="2.6"/><circle cx="19" cy="6" r="1.8"/><circle cx="19" cy="18" r="2"/><circle cx="5" cy="18" r="1.6"/><path d="M6.8 7.3l3.4 3.2M13.8 10.6l3.6-3.4M13.9 13.4l3.4 3.2M6.6 16.8l3.4-3.3"/></svg><span>Proyección</span></button>
       <button class="tab" data-view="markets"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 8-8"/><path d="M15 7h5v5"/></svg><span>Mercados</span></button>
+      <button class="tab" data-view="live"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M8.5 15.5a5 5 0 010-7M15.5 8.5a5 5 0 010 7M5.6 18.4a9 9 0 010-12.8M18.4 5.6a9 9 0 010 12.8"/></svg><span>En vivo</span></button>
     </nav>
 
     <div class="sheet-backdrop" id="backdrop"></div>
@@ -98,6 +133,7 @@
   <script src="vendor/topojson-client.min.js"></script>
   <script src="vendor/world-110m.js"></script>
   <script src="data.js"></script>
+  <script src="model.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

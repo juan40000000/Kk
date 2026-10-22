@@ -31,7 +31,8 @@ import java.util.zip.GZIPInputStream;
 /**
  * Contenedor nativo: un WebView a pantalla completa que carga la interfaz
  * desde assets y le ofrece un puente HTTP sin restricciones CORS para
- * consultar noticias (RSS / GDELT) y cotizaciones en vivo.
+ * consultar noticias, desastres, clips y cotizaciones en vivo. El audio de
+ * las radios sigue sonando con la app en segundo plano (no se pausa el WebView).
  */
 public class MainActivity extends Activity {
 
@@ -60,7 +61,8 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setAllowFileAccess(true);
-        s.setMediaPlaybackRequiresUserGesture(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setTextZoom(100);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         if (Build.VERSION.SDK_INT >= 26) s.setSafeBrowsingEnabled(true);
