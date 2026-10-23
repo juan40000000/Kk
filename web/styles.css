@@ -301,3 +301,50 @@ body.has-player .legend { bottom: 160px; }
 .react { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .react .r-id { font-weight: 650; }
 .v-done { color: var(--up); font-weight: 650; } .v-wait { color: var(--gold); font-weight: 650; } .v-against { color: var(--down); font-weight: 650; }
+
+/* ---------- globo 3D + HUD táctico ---------- */
+#globe3d { position: absolute; inset: 0; display: none; }
+#view-globe.webgl #globe3d { display: block; }
+#view-globe.webgl #globe { display: none; }
+#glabels, .hud { position: absolute; inset: 0; pointer-events: none; overflow: hidden; display: none; }
+#view-globe.webgl #glabels { display: block; }
+#view-globe.webgl.hud-on .hud { display: block; }
+.gl-label { position: absolute; left: 0; top: 0; white-space: nowrap; font: 700 11px/18px system-ui, sans-serif; padding: 0 6px; border-radius: 4px;
+  color: #ffd5dd; text-shadow: 0 1px 3px #000, 0 0 8px rgba(0,0,0,.8); will-change: transform; }
+.gl-label.gl-conf { font-size: 11.5px; letter-spacing: .3px; }
+.gl-label.gl-conf.sel { color: #fff; background: rgba(255,60,85,.35); }
+.gl-label.gl-hub { font-weight: 600; font-size: 10px; color: #c9cfe0; background: rgba(5,8,16,.55); }
+.gl-label.gl-hub.up { color: #2EE6A6; } .gl-label.gl-hub.down { color: #FF7A90; }
+.gl-label.gl-strike { font: 800 9px/16px ui-monospace, monospace; letter-spacing: 1.5px; color: #ff8a5c; border: 1px solid rgba(255,120,80,.6); background: rgba(40,8,4,.55); animation: blink 1s steps(2) infinite; }
+.gl-label.gl-storm { background: rgba(5,8,16,.6); }
+.gl-label.gl-track { font-size: 9px; color: #fff; opacity: .8; }
+.gl-label.gl-dis { font-size: 10px; background: rgba(5,8,16,.55); }
+@keyframes blink { 50% { opacity: .35; } }
+#view-globe.hud-on .gl-label.gl-conf { font-family: ui-monospace, "Roboto Mono", monospace; text-transform: uppercase; letter-spacing: 1.2px; color: #ff9fae; }
+#glock { position: absolute; left: 0; top: 0; display: none; pointer-events: none; }
+#glock i { position: absolute; width: 14px; height: 14px; border: 2px solid #ff4d6d; filter: drop-shadow(0 0 4px #ff4d6d); }
+#glock i:nth-child(1) { left: 0; top: 0; border-right: 0; border-bottom: 0; }
+#glock i:nth-child(2) { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+#glock i:nth-child(3) { left: 0; bottom: 0; border-right: 0; border-top: 0; }
+#glock i:nth-child(4) { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+.hud-scan { position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(120,255,190,.035) 0 1px, transparent 1px 3px),
+              radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
+#view-globe.thermal .hud-scan { background: repeating-linear-gradient(0deg, rgba(255,255,255,.04) 0 1px, transparent 1px 3px), radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.6) 100%); }
+.hud-c { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(93,255,176,.55); }
+.hud-c.tl { left: 10px; top: 96px; border-right: 0; border-bottom: 0; }
+.hud-c.tr { right: 10px; top: 96px; border-left: 0; border-bottom: 0; }
+.hud-c.bl { left: 10px; bottom: 150px; border-right: 0; border-top: 0; }
+.hud-c.br { right: 10px; bottom: 150px; border-left: 0; border-top: 0; }
+.hud-read { position: absolute; left: 18px; top: 104px; font: 600 10px/1.55 ui-monospace, "Roboto Mono", monospace; letter-spacing: 1px; color: rgba(140,255,200,.9); text-shadow: 0 0 6px rgba(0,0,0,.9); }
+.hud-read .rec { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ff3b3b; margin-right: 6px; animation: blink 1.2s steps(2) infinite; }
+.hud-reticle { position: absolute; left: 50%; top: 45%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border: 1px solid rgba(140,255,200,.35); border-radius: 50%; }
+.hud-reticle::before, .hud-reticle::after { content: ""; position: absolute; background: rgba(140,255,200,.45); }
+.hud-reticle::before { left: 50%; top: -10px; bottom: -10px; width: 1px; }
+.hud-reticle::after { top: 50%; left: -10px; right: -10px; height: 1px; }
+.hud-reticle i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: rgba(140,255,200,.9); border-radius: 50%; }
+#hudRadar { position: absolute; right: 16px; bottom: 156px; width: 90px; height: 90px; border-radius: 50%; background: rgba(4,20,14,.55); border: 1px solid rgba(93,255,176,.4); }
+#view-globe.thermal .hud-read, #view-globe.thermal .hud-reticle { color: #fff; border-color: rgba(255,255,255,.4); }
+#view-globe.thermal .hud-c { border-color: rgba(255,255,255,.55); }
+.globe-ui .seg button { padding: 6px 9px; }
+#view-globe .legend { display: none; }

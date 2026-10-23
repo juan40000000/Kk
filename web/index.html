@@ -34,9 +34,30 @@
 
     <main>
       <!-- MUNDO -->
-      <section class="view active" id="view-globe">
+      <section class="view active hud-on" id="view-globe">
         <canvas id="globe"></canvas>
+        <canvas id="globe3d"></canvas>
+        <div id="glabels"></div>
+        <div id="glock"><i></i><i></i><i></i><i></i></div>
+        <div class="hud" aria-hidden="true">
+          <div class="hud-scan"></div>
+          <div class="hud-c tl"></div><div class="hud-c tr"></div><div class="hud-c bl"></div><div class="hud-c br"></div>
+          <div class="hud-read">
+            <div><span class="rec"></span>SAT-PULSO · ÓRBITA LEO · EN VIVO</div>
+            <div id="hudTime">UTC --:--:--</div>
+            <div id="hudPos">LAT --  LON --</div>
+            <div id="hudAlt">ALT --</div>
+            <div id="hudCount"></div>
+          </div>
+          <div class="hud-reticle"><i></i></div>
+          <canvas id="hudRadar" width="180" height="180"></canvas>
+        </div>
         <div class="globe-ui">
+          <div class="seg" id="visSeg">
+            <button data-vis="0">Real</button>
+            <button class="on" data-vis="1">Táctico</button>
+            <button data-vis="2">Térmico</button>
+          </div>
           <div class="seg" id="projSeg">
             <button class="on" data-proj="globe">3D</button>
             <button data-proj="flat">Mapa</button>
@@ -134,10 +155,12 @@
   </div>
 
   <script src="vendor/d3.min.js"></script>
+  <script src="vendor/three.min.js"></script>
   <script src="vendor/topojson-client.min.js"></script>
   <script src="vendor/world-110m.js"></script>
   <script src="data.js"></script>
   <script src="model.js"></script>
+  <script src="globe3d.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -529,6 +529,7 @@
 
   function afterData() {
     computeHeat(); computeProjection(); computeRisk(); buildStrikes();
+    try { Globe.refresh(); } catch (e) { /* el globo todavía no se creó */ }
     S.news.forEach((n) => { n.iol = relatedInstruments(n); });
     S.clips.forEach((c) => { c.score = clipScore(c); });
     ConnGraph.rebuild(); ProjGraph.rebuild();
@@ -994,7 +995,7 @@
       } catch (e) { /* GDELT opcional: quedan las de noticias */ }
     }
     if (out.length) S.gdelt = out.slice(0, 40);
-    buildStrikes();
+    buildStrikes(); Globe.refresh();
   }
 
   /* ================= huracanes activos (NHC) ================= */
@@ -1015,6 +1016,7 @@
           lat: +st.latitudeNumeric, lon: +st.longitudeNumeric, dir: +st.movementDir, mph: +st.movementSpeed, pressure: st.pressure,
           t: Date.parse(st.lastUpdate) || Date.now(), link: 'https://www.nhc.noaa.gov/', src: 'NHC' };
       }).filter((st) => isFinite(st.lat) && isFinite(st.lon));
+      Globe.refresh();
     } catch (e) { /* sin ciclones activos o NHC no disponible */ }
   }
   // ciclones a dibujar: NHC + los TC de GDACS/EONET que no estén ya en NHC
@@ -1207,7 +1209,7 @@
   }
 
   /* ================= GLOBO / MAPA ================= */
-  const Globe = (function () {
+  const Globe2D = (function () {
     const canvas = $('#globe'); const ctx = canvas.getContext('2d');
     const world = topojson.feature(window.WORLD_TOPO, window.WORLD_TOPO.objects.countries).features;
     const graticule = d3.geoGraticule10();
@@ -1639,19 +1641,9 @@
       if (mode === 'globe') zoom = Math.max(zoom, 1.25);
     }
 
-    $('#projSeg').addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
-      mode = b.dataset.proj;
-      $$('#projSeg button').forEach((x) => x.classList.toggle('on', x === b));
-      if (mode === 'flat') { rot[1] = 0; flatY = 0; } else rot[1] = -25;
-    });
-    $('#layerSeg').addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
-      layers[b.dataset.layer] = !layers[b.dataset.layer];
-      b.classList.toggle('on', layers[b.dataset.layer]);
-    });
-
     return {
+      setMode(m) { mode = m; if (mode === 'flat') { rot[1] = 0; flatY = 0; } else rot[1] = -25; },
+      setLayer(k, on) { layers[k] = on; },
       start() { if (running) return; running = true; resize(); requestAnimationFrame(frame); },
       stop() { running = false; },
       resize,
@@ -1660,6 +1652,152 @@
       flyToDisaster(id) { const d = S.disasters.find((x) => x.id === id); if (d) flyToLL(d.lon, d.lat, id); }
     };
   })();
+
+
+  /* ================= Mundo: globo 3D (WebGL) + mapa plano (2D) ================= */
+  const HUB_BIG = ['Nueva York', 'Londres', 'Fráncfort', 'Tokio', 'Hong Kong', 'Shanghái', 'São Paulo', 'Buenos Aires', 'Tel Aviv', 'Bombay', 'Chicago'];
+  const CAT_COLORS = ['#7FDBFF', '#FFE066', '#FFB347', '#FF7849', '#FF4D6D', '#C77DFF'];
+  function globeData() {
+    const countryHeat = {};
+    D.conflicts.forEach((c) => c.countries.forEach((n) => { countryHeat[n] = Math.max(countryHeat[n] || 0, S.heat[c.id] || c.base); }));
+    const hubsMap = {};
+    D.assets.forEach((a) => {
+      const city = a.hub.split(' (')[0]; if (city === 'Global') return;
+      (hubsMap[city] = hubsMap[city] || { city, lat: a.lat, lon: a.lon, assets: [] }).assets.push(a.id);
+    });
+    const hubs = Object.values(hubsMap).map((h) => {
+      const v = h.assets.filter((s) => !assetById[s].inverse && S.quotes[s] && S.quotes[s].chg != null).map((s) => S.quotes[s].chg);
+      h.chg = v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+      h.big = HUB_BIG.includes(h.city);
+      h.label = h.city + (h.chg != null ? ' ' + fmtChg(h.chg) : '');
+      return h;
+    });
+    const links = [];
+    D.conflicts.forEach((c) => c.assets.forEach((sym) => {
+      const a = assetById[sym]; const q = S.quotes[sym];
+      links.push({ from: [c.lat, c.lon], to: [a.lat, a.lon], owner: c.id, alpha: 0.75, color: !q || q.chg == null ? '#ffc857' : q.chg >= 0 ? '#2ee6a6' : '#ff5c7a' });
+    }));
+    S.disasters.filter((d) => d.sev >= 0.6).slice(0, 6).forEach((d) => Object.keys(d.shock || {}).slice(0, 3).forEach((f) => {
+      const a = assetById[factorAsset[f]]; if (a) links.push({ from: [d.lat, d.lon], to: [a.lat, a.lon], owner: d.id, alpha: 0.6, color: '#78c8ff' });
+    }));
+    const disasters = S.disasters.map((d) => ({ id: d.id, type: d.type, lat: d.lat, lon: d.lon, sev: d.sev, color: M.disasterTypes[d.type].color,
+      label: d.mag ? 'M' + d.mag.toFixed(1) + ' ' + (d.place || '').split(',').pop().trim() : M.disasterTypes[d.type].name }));
+    const cy = cyclones().map((c) => {
+      const track = c.dir != null && isFinite(c.dir) && c.mph > 0 ? [[c.lat, c.lon]].concat([24, 48, 72].map((h) => destination(c.lat, c.lon, c.dir, c.mph * 1.609 * h))) : null;
+      return { id: c.id, lat: c.lat, lon: c.lon, cat: c.cat, color: CAT_COLORS[c.cat], track,
+        label: `${c.cat ? 'Cat ' + c.cat : 'T. tropical'} · ${c.name}${c.kmh ? ' · ' + c.kmh + ' km/h' : ''}` };
+    });
+    const conflicts = D.conflicts.map((c) => ({ id: c.id, lat: c.lat, lon: c.lon, short: c.short, heat: S.heat[c.id] || c.base }));
+    return { countryHeat, conflicts, hubs, links, disasters, cyclones: cy, strikes: S.strikes };
+  }
+
+  let G3 = null;
+  try {
+    G3 = window.PG_Globe3D && window.PG_Globe3D({
+      canvas: $('#globe3d'), labels: $('#glabels'), lock: $('#glock'),
+      world: topojson.feature(window.WORLD_TOPO, window.WORLD_TOPO.objects.countries).features,
+      data: globeData,
+      onSelect() { /* tocar el vacío suelta la selección */ },
+      onTap(it) {
+        if (it.type === 'conf') showConflict(it.id);
+        else if (it.type === 'dis') showDisaster(it.id);
+        else if (it.type === 'strike') showStrike(it.id);
+        else if (it.type === 'storm') showStorm(it.id);
+        else if (it.type === 'hub') {
+          const h = it.hub;
+          openSheet(`<div class="kicker">Plaza financiera</div><h2>${esc(h.city)}</h2>${h.assets.map(marketRow).join('')}
+            <h5>Conflictos con impacto aquí</h5>${D.conflicts.filter((c) => c.assets.some((x) => h.assets.includes(x))).map((c) => `<button class="mini-news" data-conf="${c.id}">${esc(c.name)}<small>${esc(c.channels)}</small></button>`).join('') || '<p class="muted">Sin vínculos directos.</p>'}`);
+        }
+      },
+      onFrame: hudFrame
+    });
+  } catch (e) { G3 = null; }
+
+  const Globe = (function () {
+    let mode = G3 ? '3d' : 'globe2d';
+    let running = false;
+    let dirty = true;
+    const view = $('#view-globe');
+    function apply() {
+      view.classList.toggle('webgl', mode === '3d');
+      if (!running) { Globe2D.stop(); if (G3) G3.stop(); return; }
+      if (mode === '3d') { Globe2D.stop(); if (dirty) { G3.rebuild(); dirty = false; } G3.start(); }
+      else { if (G3) G3.stop(); Globe2D.setMode(mode === 'flat' ? 'flat' : 'globe'); Globe2D.start(); }
+    }
+    $('#projSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      mode = b.dataset.proj === 'flat' ? 'flat' : G3 ? '3d' : 'globe2d';
+      $$('#projSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      Globe2D.stop(); apply();
+    });
+    $('#layerSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      b.classList.toggle('on');
+      const on = b.classList.contains('on');
+      Globe2D.setLayer(b.dataset.layer, on);
+      if (G3) G3.setLayer(b.dataset.layer, on);
+    });
+    $('#visSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      $$('#visSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      const m = +b.dataset.vis;
+      view.classList.toggle('hud-on', m > 0); view.classList.toggle('thermal', m === 2);
+      if (G3) G3.setMode(m);
+      try { localStorage.setItem('pg_vis', m); } catch (er) { /* opcional */ }
+    });
+    let rebuildTimer = null;
+    return {
+      start() { running = true; apply(); },
+      stop() { running = false; apply(); },
+      resize() { Globe2D.resize(); if (G3) G3.resize(); },
+      refresh() {
+        dirty = true;
+        clearTimeout(rebuildTimer);
+        rebuildTimer = setTimeout(() => { if (G3 && running && mode === '3d') { G3.rebuild(); dirty = false; } }, 250);
+      },
+      select(id) { Globe2D.select(id); if (G3) G3.select(id); },
+      flyTo(id) { const c = conflictById[id]; if (!c) return; Globe2D.flyTo(id); if (G3) G3.flyTo(c.lat, c.lon, id); },
+      flyToDisaster(id) {
+        const d = S.disasters.find((x) => x.id === id) || cyclones().find((x) => x.id === id); if (!d) return;
+        Globe2D.flyToDisaster(id); if (G3) G3.flyTo(d.lat, d.lon, id);
+      }
+    };
+  })();
+
+  (function () { // modo visual guardado
+    let m = 1; try { const v = localStorage.getItem('pg_vis'); if (v != null) m = +v; } catch (e) { /* opcional */ }
+    const b = document.querySelector(`#visSeg button[data-vis="${m}"]`); if (b && m !== 1) b.click();
+  })();
+
+  // HUD táctico: coordenadas, hora UTC, altitud y radar con los ataques cercanos
+  let hudLast = 0;
+  function hudFrame(v) {
+    const now = performance.now();
+    if (now - hudLast < 120) return; hudLast = now;
+    const view = $('#view-globe'); if (!view.classList.contains('hud-on')) return;
+    const ns = v.lat >= 0 ? 'N' : 'S', ew = ((v.lon % 360) + 540) % 360 - 180;
+    $('#hudPos').textContent = `LAT ${Math.abs(v.lat).toFixed(2)}°${ns}  LON ${Math.abs(ew).toFixed(2)}°${ew >= 0 ? 'E' : 'O'}`;
+    $('#hudAlt').textContent = `ALT ${nf(0).format(v.alt)} KM`;
+    const d = new Date();
+    $('#hudTime').textContent = `UTC ${d.toISOString().slice(11, 19)}`;
+    $('#hudCount').textContent = `${S.strikes.length} IMPACTOS · ${cyclones().length} CICLONES · ${S.disasters.length} ALERTAS`;
+    const cv = $('#hudRadar'); const g = cv.getContext('2d'); const R = cv.width / 2;
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.strokeStyle = 'rgba(93,255,176,.35)'; g.lineWidth = 1;
+    [0.33, 0.66, 0.98].forEach((k) => { g.beginPath(); g.arc(R, R, R * k, 0, Math.PI * 2); g.stroke(); });
+    g.beginPath(); g.moveTo(R, 0); g.lineTo(R, 2 * R); g.moveTo(0, R); g.lineTo(2 * R, R); g.stroke();
+    const sweep = (now / 1000 * 1.6) % (Math.PI * 2);
+    const gr = g.createConicGradient ? g.createConicGradient(sweep - 0.6, R, R) : null;
+    if (gr) { gr.addColorStop(0, 'rgba(93,255,176,0)'); gr.addColorStop(0.09, 'rgba(93,255,176,.35)'); gr.addColorStop(0.1, 'rgba(93,255,176,0)'); g.fillStyle = gr; g.beginPath(); g.arc(R, R, R, 0, Math.PI * 2); g.fill(); }
+    const lat0 = v.lat * Math.PI / 180, lon0 = v.lon * Math.PI / 180;
+    S.strikes.forEach((s) => {
+      const la = s.lat * Math.PI / 180, lo = s.lon * Math.PI / 180;
+      const dd = d3.geoDistance([v.lon, v.lat], [s.lon, s.lat]); if (dd > 0.9) return;
+      const brg = Math.atan2(Math.sin(lo - lon0) * Math.cos(la), Math.cos(lat0) * Math.sin(la) - Math.sin(lat0) * Math.cos(la) * Math.cos(lo - lon0));
+      const r = (dd / 0.9) * R * 0.95;
+      g.fillStyle = 'rgba(255,90,60,.95)'; g.beginPath(); g.arc(R + Math.sin(brg) * r, R - Math.cos(brg) * r, 2.6, 0, Math.PI * 2); g.fill();
+    });
+  }
 
   /* ================= GRAFOS estilo Obsidian ================= */
   function makeGraph(opts) {

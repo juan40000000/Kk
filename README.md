@@ -11,6 +11,14 @@ App Android que cruza **noticias en vivo de guerras y conflictos** con **las bol
 - **Mercados**: Argentina · IOL (acciones, CEDEARs, ETFs, bonos AL/GD y LECAPs/BONCAPs detectadas en vivo) y Mundo (índices, commodities, divisas), más un índice de tensión global.
 - **En vivo**: radios de noticias en vivo (Argentina e internacionales, vía radio-browser.info) con reproductor que sigue sonando en segundo plano, y clips recientes de DW, France 24, CNN en Español, BBC Mundo, TN, Al Jazeera, Reuters y Bloomberg ordenados por relevancia.
 
+**Novedades 4.0 · Globo 3D hiperrealista**
+- Motor WebGL (three.js) con texturas satelitales de la NASA (Blue Marble y luces nocturnas), relieve, reflejo del sol en el océano, nubes y atmósfera.
+- Día y noche según la posición real del sol en este momento: el lado nocturno muestra las luces de las ciudades.
+- Tres modos visuales: **Real**, **Táctico** (HUD estilo militar con coordenadas, hora UTC, altitud, retícula, radar de impactos y marco de objetivo fijado) y **Térmico** (visión infrarroja blanco-caliente).
+- Misiles con estela de humo y explosiones con destello, bola de fuego, esquirlas, humo y onda expansiva; la cámara tiembla con los impactos cercanos.
+- Huracanes como espirales de nubes en escala real, con su categoría y rumbo proyectado.
+- El mapa plano sigue disponible y, si el teléfono no tiene WebGL, se usa el globo 2D anterior.
+
 **Novedades 3.x** (todo con fuentes gratuitas, sin claves ni APIs pagas)
 - **¿Ya se movió?**: en cada noticia, el precio al momento de la publicación contra el último (barras de 5 min; CEDEARs medidos con su acción en Nueva York).
 - **Videos dentro de la app** (reproductor a pantalla completa) y **radio en segundo plano** con controles en la notificación y la pantalla de bloqueo.
@@ -19,7 +27,8 @@ App Android que cruza **noticias en vivo de guerras y conflictos** con **las bol
 Fuentes: Google Noticias, GDELT GEO, NHC, BBC Mundo, DW, Al Jazeera, GDELT, USGS, GDACS, NASA EONET, Yahoo Finance, data912.com (paneles BYMA), YouTube RSS y radio-browser.info. La proyección es un modelo heurístico de exposición a factores (`web/model.js`), no una predicción ni asesoramiento financiero.
 
 ## Estructura
-- `web/` — interfaz (HTML/CSS/JS + d3 y el mapa mundial embebidos, funciona sin CDN).
+- `web/` — interfaz (HTML/CSS/JS + d3, three.js y el mapa mundial embebidos, funciona sin CDN).
+- `web/globe3d.js` — globo WebGL; `web/tex/` — texturas de la Tierra (NASA, dominio público).
 - `web/data.js` — focos de conflicto, activos globales y fuentes de noticias.
 - `web/model.js` — factores, instrumentos IOL y sus sensibilidades, reglas de desastres, radios y canales.
 - `android/` — contenedor nativo (WebView + puente HTTP sin CORS).

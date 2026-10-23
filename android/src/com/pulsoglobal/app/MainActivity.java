@@ -22,6 +22,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -50,6 +51,10 @@ public class MainActivity extends Activity {
     private static final int MAX_BYTES = 4 * 1024 * 1024;
     // Origen con el que se incrusta el reproductor de YouTube (YouTube exige un Referer)
     private static final String VIDEO_ORIGIN = "https://com.pulsoglobal.app";
+    // La interfaz se sirve desde assets bajo un origen https propio: así WebGL puede usar las
+    // texturas del globo (con file:// el navegador las marca como de otro origen y las bloquea).
+    private static final String APP_HOST = "appassets.androidplatform.net";
+    private static final String APP_URL = "https://" + APP_HOST + "/web/index.html";
 
     private WebView web;
     private Dialog videoDialog;
@@ -84,13 +89,27 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
-                if ("file".equals(u.getScheme())) return false;
+                if (APP_HOST.equals(u.getHost())) return false;
                 openExternal(u.toString());
                 return true;
             }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
+                Uri u = req.getUrl();
+                if (!APP_HOST.equals(u.getHost()) || u.getPath() == null) return null;
+                String path = u.getPath().replaceFirst("^/+", "");
+                if (!path.startsWith("web/") || path.contains("..")) return null;
+                try {
+                    return new WebResourceResponse(mimeOf(path), mimeOf(path).startsWith("text") || path.endsWith(".js") ? "utf-8" : null,
+                            getAssets().open(path));
+                } catch (Exception e) {
+                    return null;
+                }
+            }
         });
         setContentView(web);
-        web.loadUrl("file:///android_asset/web/index.html");
+        web.loadUrl(APP_URL);
         prefs().edit().remove("claude_key").apply(); // la versión 3.0 podía guardar una clave de API: se borra
 
         RadioService.listener = new RadioService.Listener() {
@@ -148,6 +167,17 @@ public class MainActivity extends Activity {
         pool.shutdownNow();
         web.destroy();
         super.onDestroy();
+    }
+
+    private static String mimeOf(String path) {
+        if (path.endsWith(".html")) return "text/html";
+        if (path.endsWith(".js")) return "application/javascript";
+        if (path.endsWith(".css")) return "text/css";
+        if (path.endsWith(".json")) return "application/json";
+        if (path.endsWith(".png")) return "image/png";
+        if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+        if (path.endsWith(".svg")) return "image/svg+xml";
+        return "application/octet-stream";
     }
 
     private SharedPreferences prefs() {
