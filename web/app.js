@@ -237,7 +237,7 @@
       });
     });
     const F = {}; const known = {};
-    const add = (f, v, k) => { F[f] = (F[f] || 0) + v; known[f] = known[f] !== false && k; };
+    const add = (f, v, k) => { F[f] = (F[f] || 0) + v; known[f] = !!(known[f] || k); };
     (item.factors || []).forEach((f) => add(f, tdir ? tdir * 0.6 : 0.5, !!tdir));
     item.conf.forEach((id) => Object.entries(M.conflictShock[id] || {}).forEach(([f, v]) => { if (v >= 0.5) add(f, v, true); }));
     if (item.dis) {
@@ -258,7 +258,7 @@
       if (out.some((o) => o.id === x.id)) return;
       const f = x.best.f;
       if ((perFactor[f] = (perFactor[f] || 0) + 1) > 2) return; // no más de 2 por motivo
-      out.push({ id: x.id, s: x.s, dir: known[f] !== false, why: M.factors[f].short, w: 1 });
+      out.push({ id: x.id, s: x.s, dir: !!known[f], why: M.factors[f].short, w: 1 });
     });
     return out.slice(0, 4);
   }

@@ -127,7 +127,7 @@ window.PG_MODEL = (function () {
     { re: /riesgo pa[íi]s|bonos? (soberanos|argentinos|en d[óo]lares)|\bal30\b|\bgd30\b|bonares|bonos globales/i, ids: ['GD30', 'AL30'] },
     { re: /\blecaps?\b|\bboncaps?\b|letras del tesoro/i, ids: ['@lecap'] }
   ];
-  const upRe = /\bsuben?\b|subi[óo]|dispar|\btrepa|\balza\b|r[ée]cord|m[áa]ximos?|se encarece|repunt|\bganan?\b|\bsoars?\b|\bjumps?\b|\brises?\b|\bsurges?\b/i;
+  const upRe = /\bsuben?\b|elev[ao]n?\b|elevar|encarec|aument|subi[óo]|dispar|\btrepa|\balza\b|r[ée]cord|m[áa]ximos?|se encarece|repunt|\bganan?\b|\bsoars?\b|\bjumps?\b|\brises?\b|\bsurges?\b/i;
   const downRe = /\bcaen?\b|cay[óo]|\bbajan?\b|desplom|retroced|m[íi]nimos?|pierden?|se abarata|derrumb|\bplunges?\b|\bfalls?\b|\bdrops?\b|\bslumps?\b/i;
   // notas de deportes/espectáculos que comparten palabras con los eventos ("Huracán", "Ciclón", "defensa"…)
   const offTopicRe = /\bvs\.?\s|\bvs\b|partido|f[úu]tbol|liga profesional|\btorneo\b|copa (de la liga|argentina|libertadores|sudamericana|del mundo)|alineaci|formaciones|d[óo]nde ver|cu[áa]ndo juegan|\bhinchas\b|\bgol(es)?\b|campeonato|cl[áa]sico|\bnba\b|\btenis\b|f[óo]rmula 1|\bhor[óo]scopo|telenovela|reality/i;
