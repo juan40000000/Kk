@@ -102,7 +102,7 @@ window.PG_MODEL = (function () {
     { re: /uranio|uranium/i, f: 'uranium' },
     { re: /gasto (militar|en defensa)|industria de (la )?defensa|armamento|\barmas\b|misiles|\botan\b|\bnato\b|contratistas de defensa|ministerio de defensa/i, f: 'defense' },
     { re: /\bfletes?\b|navieras?|\bshipping\b|buques? (mercantes?|cargueros?|petroleros?)|contenedores|transporte mar[íi]timo|canal de (suez|panam[áa])/i, f: 'shipping' },
-    { re: /semiconductor|\bchips?\b|\btsmc\b|\bnvidia\b/i, f: 'chips' },
+    { re: /escasez de (chips|semiconductores)|(restricci[óo]n|bloqueo|controles?) (a la exportaci[óo]n )?de (chips|semiconductores)|chip shortage/i, f: 'chips' },
     { re: /aerol[íi]neas?|espacio a[ée]reo|vuelos (cancelados|suspendidos|desviados)|\bairlines?\b/i, f: 'aviation' },
     { re: /asegurador|reasegur|\binsurers?\b/i, f: 'insurance' },
     { re: /reconstrucci[óo]n/i, f: 'rebuild' },
@@ -297,8 +297,41 @@ window.PG_MODEL = (function () {
   const strikeFeed = 'https://api.gdeltproject.org/api/v2/geo/geo?query=(airstrike%20OR%20%22missile%20strike%22%20OR%20%22drone%20strike%22%20OR%20shelling%20OR%20bombardment)&mode=PointData&format=GeoJSON&timespan=24h&maxpoints=250';
   const hurricaneFeed = 'https://www.nhc.noaa.gov/CurrentStorms.json';
 
+
+  // ---------- sentimiento financiero (léxico al estilo Loughran-McDonald, en español e inglés) ----------
+  const posWords = ['sube', 'suben', 'subió', 'subieron', 'alza', 'avanza', 'avanzan', 'avance', 'repunta', 'repunte', 'récord', 'máximo', 'máximos',
+    'gana', 'ganan', 'ganancia', 'ganancias', 'crece', 'crecen', 'crecimiento', 'supera', 'superó', 'mejora', 'mejoró', 'mejoran', 'acuerdo', 'alivio',
+    'tregua', 'recupera', 'recuperan', 'recuperación', 'inversión', 'inversiones', 'expansión', 'dividendo', 'dividendos', 'beneficio', 'beneficios',
+    'utilidades', 'aprobó', 'aprobación', 'rally', 'optimismo', 'sólido', 'sólidos', 'firme', 'trepa', 'trepan', 'dispara', 'disparan', 'impulsa', 'impulso',
+    'compran', 'compra', 'compró', 'acumula', 'demanda récord', 'superávit', 'acumula reservas', 'calma', 'estabilidad', 'baja la inflación', 'desacelera la inflación',
+    'rises', 'gains', 'surges', 'jumps', 'rally', 'record', 'beats', 'upgrade', 'growth', 'profit', 'deal', 'ceasefire', 'recovery', 'soars'];
+  const negWords = ['cae', 'caen', 'cayó', 'cayeron', 'baja', 'bajan', 'desploma', 'desplome', 'derrumbe', 'derrumba', 'pierde', 'pierden', 'pérdida',
+    'pérdidas', 'retrocede', 'retroceden', 'mínimo', 'mínimos', 'crisis', 'default', 'quiebra', 'sanción', 'sanciones', 'recorte', 'recortes', 'recesión',
+    'temor', 'temores', 'miedo', 'incertidumbre', 'pánico', 'escalada', 'tensión', 'amenaza', 'amenazas', 'huelga', 'paro', 'suspende', 'multa',
+    'rebaja', 'deuda', 'déficit', 'devaluación', 'cepo', 'colapso', 'desaceleración', 'castigo', 'castigados', 'venden', 'ventas masivas', 'fuga',
+    'inflación', 'aranceles', 'guerra comercial', 'presión', 'se hunde', 'hunden', 'turbulencia', 'alarma',
+    'falls', 'drops', 'plunges', 'slumps', 'losses', 'crisis', 'downgrade', 'default', 'recession', 'fears', 'selloff', 'sell-off', 'tariffs', 'slides', 'tumbles'];
+  // factores cuyo precio sigue la dirección del titular ("el petróleo sube" = factor petróleo al alza)
+  const priceFactors = ['oil', 'gas', 'gold', 'agri', 'metals', 'uranium', 'shipping'];
+  const negators = ['no', 'sin', 'ni', 'nunca', 'not', 'no longer', 'evita', 'descarta'];
+  // sujetos "inversos": que bajen es bueno (riesgo país, inflación, dólar paralelo, desempleo, volatilidad)
+  const inverseSubjects = /riesgo pa[íi]s|inflaci[óo]n|d[óo]lar (blue|mep|ccl|paralelo|oficial)|brecha cambiaria|desempleo|desocupaci[óo]n|volatilidad|\bvix\b|tasas? de inter[ée]s/i;
+  // noticias generales del mercado que se aplican a grupos de instrumentos
+  const marketScopes = [
+    { re: /merval|acciones argentinas|adrs? argentin|panel l[íi]der|byma/i, types: ['Acciones'], chips: ['GGAL', 'YPFD'], w: 0.6 },
+    { re: /wall street|s&p ?500|bolsas? (de nueva york|mundiales|estadounidenses)/i, ids: ['SPY', 'QQQ'], types: ['CEDEARs'], chips: ['SPY', 'QQQ'], w: 0.35 },
+    { re: /bonos? (soberanos|argentinos|en d[óo]lares)|bonares|bonos globales/i, types: ['Bonos'], chips: ['GD30', 'AL30'], w: 0.8 },
+    { re: /riesgo pa[íi]s/i, types: ['Bonos', 'Acciones'], chips: ['GD30', 'AL30'], w: 0.8, inverse: true },
+    { re: /d[óo]lar (blue|mep|ccl|paralelo)|brecha cambiaria/i, types: ['Acciones', 'Bonos'], chips: ['GGAL'], w: 0.4, inverse: true },
+    { re: /\blecaps?\b|licitaci[óo]n del tesoro|tasas? en pesos/i, types: ['LECAPs'], chips: ['@lecap'], w: 0.6 },
+    { re: /mercados emergentes|emerging markets/i, ids: ['EEM'], chips: ['EEM'], w: 0.6 }
+  ];
+  // amenazas y actos geopolíticos (categorías del índice GPR de Caldara e Iacoviello)
+  const gprThreat = /amenaza|tensi[óo]n|escalada|ultim[áa]tum|despliegue|maniobras|movilizaci|advierte|alerta nuclear|threat|warns|buildup|nuclear/i;
+  const gprAct = /ataque|bombarde|misil|invasi|ofensiva|atentado|muertos|combates|airstrike|attack|missile|invasion|killed/i;
+
   const argFeeds = ['arg_stocks', 'arg_cedears', 'arg_bonds', 'arg_notes'].map((k) => ({ key: k, url: 'https://data912.com/live/' + k }));
   const iolUrl = (sym) => 'https://iol.invertironline.com/titulo/cotizacion/BCBA/' + encodeURIComponent(sym);
 
-  return { launch, cities, strikeRe, strikeFeed, hurricaneFeed, entities, upRe, downRe, offTopicRe, weakKeywords, disasterCtx, factors, conflictShock, instruments, lecapSens, factorWords, disasterTypes, disasterWords, disasterShock, regionOf, disasterFeeds, disasterNewsFeed, radioServers, radios, channels, argFeeds, iolUrl };
+  return { priceFactors, inverseSubjects, posWords, negWords, negators, marketScopes, gprThreat, gprAct, launch, cities, strikeRe, strikeFeed, hurricaneFeed, entities, upRe, downRe, offTopicRe, weakKeywords, disasterCtx, factors, conflictShock, instruments, lecapSens, factorWords, disasterTypes, disasterWords, disasterShock, regionOf, disasterFeeds, disasterNewsFeed, radioServers, radios, channels, argFeeds, iolUrl };
 })();

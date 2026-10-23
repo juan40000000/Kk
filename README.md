@@ -11,6 +11,12 @@ App Android que cruza **noticias en vivo de guerras y conflictos** con **las bol
 - **Mercados**: Argentina · IOL (acciones, CEDEARs, ETFs, bonos AL/GD y LECAPs/BONCAPs detectadas en vivo) y Mundo (índices, commodities, divisas), más un índice de tensión global.
 - **En vivo**: radios de noticias en vivo (Argentina e internacionales, vía radio-browser.info) con reproductor que sigue sonando en segundo plano, y clips recientes de DW, France 24, CNN en Español, BBC Mundo, TN, Al Jazeera, Reuters y Bloomberg ordenados por relevancia.
 
+**Novedades 4.1 · Noticias de mercado y predicción avanzada**
+- Nuevas fuentes de mercado (bolsa argentina, dólar y BCRA, Wall Street, materias primas y empresas): ya no se descartan las noticias financieras sin contexto bélico.
+- Motor de predicción con 4 señales: eventos geopolíticos con índice de riesgo estilo GPR ([Caldara e Iacoviello](https://matteoiacoviello.com/gpr.htm)), sentimiento de noticias con léxico financiero al estilo Loughran-McDonald y decaimiento temporal ([Heston y Sinha, Fed](https://www.federalreserve.gov/econresdata/feds/2016/files/2016048pap.pdf)), dirección de materias primas en titulares y momentum ajustado por volatilidad ([Moskowitz, Ooi y Pedersen](https://papers.ssrn.com/abstract=2089463)).
+- Los pesos se aprenden solos con el algoritmo Hedge ([pesos multiplicativos](https://en.wikipedia.org/wiki/Multiplicative_weight_update_method)): cada día se guarda una foto de las predicciones y se compara con el precio posterior; la app muestra el porcentaje de aciertos.
+- Interpretación por sujeto: "el riesgo país cae" o "el dólar blue baja" cuentan como buenas noticias para los activos argentinos.
+
 **Novedades 4.0 · Globo 3D hiperrealista**
 - Motor WebGL (three.js) con texturas satelitales de la NASA (Blue Marble y luces nocturnas), relieve, reflejo del sol en el océano, nubes y atmósfera.
 - Día y noche según la posición real del sol en este momento: el lado nocturno muestra las luces de las ciudades.

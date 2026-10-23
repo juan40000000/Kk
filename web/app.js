@@ -209,9 +209,13 @@
     item.conf.forEach((id) => conflictById[id].assets.slice(0, 2).forEach((a) => assets.add(a)));
     item.assets = Array.from(assets).slice(0, 4);
     item.factors = offTopic ? [] : M.factorWords.filter((w) => w.re.test(all)).map((w) => w.f);
-    item.market = !offTopic && D.marketWords.some((w) => w.re.test(title));
-    item.relevant = !offTopic && (item.conf.length > 0 || !!item.dis || warTitle);
-    item.loose = !offTopic && (item.relevant || warAll || item.factors.length > 0 || item.market);
+    const mkt = !offTopic && (D.marketWords.some((w) => w.re.test(title)) || M.entities.some((e) => e.re.test(title)) || M.marketScopes.some((sc) => sc.re.test(title)));
+    item.geo = !offTopic && (item.conf.length > 0 || !!item.dis || warTitle);
+    item.market = mkt || (!offTopic && item.mfeed && item.factors.length > 0);
+    item.relevant = item.geo || item.market;
+    item.loose = !offTopic && (item.relevant || warAll || item.factors.length > 0);
+    item.sent = sentiment(title + ' ' + (item.desc || '').slice(0, 160));
+    item.gpr = !item.geo ? null : M.gprAct.test(title) ? 'act' : M.gprThreat.test(title) ? 'threat' : null;
     item.iol = relatedInstruments(item);
     return item;
   }
@@ -224,6 +228,24 @@
     { re: /filipinas|indonesia|vietnam/i, ll: [10, 120] }, { re: /turqu[íi]a|ir[áa]n|afganist/i, ll: [35, 45] }, { re: /italia|grecia|espa[ñn]a/i, ll: [40, 15] }
   ];
 
+  // dirección de un sujeto: verbo de suba/baja en las palabras que lo siguen ("el Merval sube", "el riesgo país cae")
+  const UPG = new RegExp(M.upRe.source, 'gi'), DNG = new RegExp(M.downRe.source, 'gi');
+  function dirNear(text, re) {
+    const g = new RegExp(re.source, 'gi'); let m, best = null;
+    while ((m = g.exec(text))) {
+      const win = text.slice(m.index + m[0].length, m.index + m[0].length + 36);
+      UPG.lastIndex = 0; DNG.lastIndex = 0;
+      const u = UPG.exec(win), dn = DNG.exec(win);
+      const cand = u && (!dn || u.index < dn.index) ? { d: 1, at: u.index } : dn ? { d: -1, at: dn.index } : null;
+      if (cand && (!best || cand.at < best.at)) best = cand;
+      if (m[0].length === 0) g.lastIndex++;
+    }
+    if (best) return best.d;
+    const m0 = new RegExp(re.source, 'i').exec(text); if (!m0) return 0;
+    const s0 = sentiment(text.slice(m0.index, m0.index + m0[0].length + 40));
+    return Math.abs(s0) >= 0.3 ? Math.sign(s0) : 0;
+  }
+
   // Instrumentos de IOL vinculados a una noticia, con su motivo:
   // 1) empresas o bonos nombrados en el texto, 2) factores que la nota menciona (dirección según el título),
   // 3) canales principales del conflicto o desastre (shock ≥ 0,5). Solo cuentan las exposiciones fuertes de cada instrumento.
@@ -232,16 +254,28 @@
     const out = [];
     const up = M.upRe.test(title), down = M.downRe.test(title);
     const tdir = up && !down ? 1 : down && !up ? -1 : 0;
+    M.marketScopes.forEach((sc) => {
+      if (!sc.re.test(title)) return;
+      const d = dirNear(title, sc.re) * (sc.inverse ? -1 : 1);
+      (sc.chips || []).forEach((id) => {
+        if (id === '@lecap') id = S.lecaps[0] && S.lecaps[0].id;
+        if (id && instById(id) && !out.some((x) => x.id === id)) out.push({ id, s: d || 0.01, dir: !!d, why: 'mercado', w: 2 });
+      });
+    });
     M.entities.forEach((e) => {
       if (!e.re.test(all)) return;
+      const d = e.re.test(title) ? dirNear(title, e.re) * (M.inverseSubjects.test((e.re.exec(title) || [''])[0]) ? -1 : 1) : 0;
       e.ids.forEach((id) => {
         if (id === '@lecap') id = S.lecaps[0] && S.lecaps[0].id;
-        if (id && instById(id) && !out.some((x) => x.id === id)) out.push({ id, s: tdir || 0.01, dir: !!tdir, why: 'mencionada', w: 3 });
+        if (id && instById(id) && !out.some((x) => x.id === id)) out.push({ id, s: d || 0.01, dir: !!d, why: 'mencionada', w: 3 });
       });
     });
     const F = {}; const known = {};
     const add = (f, v, k) => { F[f] = (F[f] || 0) + v; known[f] = !!(known[f] || k); };
-    (item.factors || []).forEach((f) => add(f, tdir ? tdir * 0.6 : 0.5, !!tdir));
+    (item.factors || []).forEach((f) => {
+      const d = M.priceFactors.includes(f) ? dirNear(title, M.factorWords.find((w) => w.f === f).re) : 0;
+      add(f, d ? d * 0.6 : 0.5, !!d);
+    });
     item.conf.forEach((id) => Object.entries(M.conflictShock[id] || {}).forEach(([f, v]) => { if (v >= 0.5) add(f, v, true); }));
     if (item.dis) {
       const ll = PLACE_LL.find((p) => p.re.test(all)) || { ll: [NaN, NaN] };
@@ -282,7 +316,7 @@
       const dateStr = xmlText(el, 'pubDate') || xmlText(el, 'dc:date') || xmlText(el, 'updated') || xmlText(el, 'published');
       const t = Date.parse(dateStr) || Date.now();
       const desc = google ? '' : cleanText(xmlText(el, 'description') || xmlText(el, 'summary'));
-      return { title: cleanText(title), link, source, t, desc };
+      return { title: cleanText(title), link, source, t, desc, mfeed: !!feed.market };
     });
   }
 
@@ -497,20 +531,183 @@
       (why[f] = why[f] || []).push({ ev: e, x });
     }));
     Object.values(why).forEach((l) => l.sort((a, b) => b.x - a.x));
+    if (S.gpr && S.gpr.total > 10) P.riskoff = (P.riskoff || 0) + S.gpr.idx / 100 * 1.5; // más amenazas en las noticias = más aversión al riesgo
     const scores = allInstruments().map((ins) => {
       let s = 0; const parts = [];
       Object.entries(ins.sens).forEach(([f, v]) => { const x = (P[f] || 0) * v; s += x; if (Math.abs(x) > 0.02) parts.push({ f, x }); });
       parts.sort((a, b) => Math.abs(b.x) - Math.abs(a.x));
       return { ins, s, parts };
     });
-    const max = Math.max(0.01, ...scores.map((x) => Math.abs(x.s)));
-    scores.forEach((x) => { x.n = Math.round((x.s / max) * 100); });
+    computeSignals(scores);
+    scores.forEach((x) => { const p = S.pred.byId[x.ins.id]; x.evS = x.s; x.s = p.score; x.prob = p.prob; x.n = Math.round(p.score * 100); });
     S.proj = {
       P, why, ev, scores,
       favor: scores.filter((x) => x.n >= 8).sort((a, b) => b.s - a.s),
       contra: scores.filter((x) => x.n <= -8).sort((a, b) => a.s - b.s),
       byId: Object.fromEntries(scores.map((x) => [x.ins.id, x]))
     };
+  }
+
+
+  /* ================= motor de predicción: 4 señales + pesos aprendidos ================= */
+  // 1) Eventos: modelo de factores (guerras y desastres) + riesgo geopolítico estilo GPR (Caldara e Iacoviello).
+  // 2) Sentimiento de noticias: léxico financiero (estilo Loughran-McDonald) con negaciones y decaimiento temporal.
+  // 3) Factores en noticias: dirección explícita de petróleo, oro, granos… en los titulares.
+  // 4) Momentum de serie temporal ajustado por volatilidad (Moskowitz, Ooi y Pedersen).
+  // Los pesos se ajustan solos con el algoritmo Hedge (pesos multiplicativos) comparando con lo que pasó después.
+  const SIGNALS = ['ev', 'news', 'fac', 'mom'];
+  const SIGNAL_NAMES = { ev: 'Eventos geopolíticos', news: 'Sentimiento de noticias', fac: 'Factores en titulares', mom: 'Momentum de precio' };
+  const DEFAULT_W = { ev: 0.3, news: 0.25, fac: 0.2, mom: 0.25 };
+  const HORIZON_DAYS = { short: 1, mid: 5 };
+  const LEX = (function () {
+    const one = {}, multi = [];
+    M.posWords.forEach((w) => (w.includes(' ') ? multi.push([w, 1]) : (one[w] = 1)));
+    M.negWords.forEach((w) => (w.includes(' ') ? multi.push([w, -1]) : (one[w] = -1)));
+    return { one, multi, neg: new Set(M.negators) };
+  })();
+  const INV_RE = new RegExp('(' + M.inverseSubjects.source + ')((?:\\s+[a-záéíóúñ%0-9,.]+){0,3}?)\\s+(' +
+    'sube|suben|subió|trepa|salta|se dispara|dispara|escala|supera|aumenta|acelera|cae|cayó|baja|bajó|perfora|retrocede|afloja|cede|desacelera|se desploma|m[íi]nimos?|m[áa]ximos?)', 'gi');
+  function sentiment(text) {
+    // "el riesgo país cae" es una buena noticia: se reescribe el par sujeto+verbo antes de puntuar
+    const t = ' ' + text.toLowerCase().replace(INV_RE, (m0, subj, _s2, mid, verb) => {
+      const up = /sube|suben|subió|trepa|salta|dispara|escala|supera|aumenta|acelera|m[áa]ximo/.test(verb);
+      return up ? ' __neg__ ' : ' __pos__ ';
+    }) + ' ';
+    let pos = 0, neg = 0;
+    LEX.multi.forEach(([w, v]) => { if (t.includes(' ' + w + ' ')) { if (v > 0) pos++; else neg++; } });
+    const tok = t.split(/[^a-záéíóúñü0-9&_-]+/).filter(Boolean);
+    tok.forEach((w) => { if (w === '__pos__') pos += 1.5; else if (w === '__neg__') neg += 1.5; });
+    tok.forEach((w, i) => {
+      const v = LEX.one[w]; if (!v) return;
+      const flipped = LEX.neg.has(tok[i - 1]) || LEX.neg.has(tok[i - 2]);
+      if ((v > 0) !== flipped) pos++; else neg++;
+    });
+    return pos + neg ? (pos - neg) / (pos + neg + 1) : 0;
+  }
+
+  // precios diarios (3 meses) para el momentum y para evaluar las predicciones
+  S.hist = load('hist') || {};
+  async function refreshHistory() {
+    if (S.demo) return;
+    const queue = allInstruments().map((i) => i.id).filter((id) => yahooFor(id) && !(S.hist[id] && Date.now() - S.hist[id].at < 6 * 3600e3));
+    async function worker() {
+      while (queue.length) {
+        const id = queue.shift();
+        try {
+          const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooFor(id))}?range=3mo&interval=1d`);
+          const r = j.chart && j.chart.result && j.chart.result[0];
+          const cl = r ? (r.indicators.quote[0].close || []).filter((v) => v != null) : [];
+          if (cl.length > 25) S.hist[id] = { cl, at: Date.now() };
+        } catch (e) { /* sin historia para este instrumento */ }
+      }
+    }
+    await Promise.all([1, 2, 3, 4].map(worker));
+    store('hist', S.hist);
+    computeProjection(); renderAll();
+  }
+  function momentum(id, horizon) {
+    const h = S.hist[id]; if (!h || h.cl.length < 25) return null;
+    const cl = h.cl, n = cl.length - 1;
+    const rets = []; for (let i = Math.max(1, n - 40); i <= n; i++) rets.push(Math.log(cl[i] / cl[i - 1]));
+    const vol = Math.sqrt(rets.reduce((a, b) => a + b * b, 0) / rets.length) || 0.01;
+    const look = horizon === 'short' ? 20 : Math.min(60, n);
+    const r = Math.log(cl[n] / cl[n - look]);
+    return r / (vol * Math.sqrt(look)); // rendimiento en unidades de volatilidad
+  }
+
+  // aprendizaje en línea (Hedge): pesos por horizonte y registro de aciertos
+  const LEARN = load('learn') || { w: { short: Object.assign({}, DEFAULT_W), mid: Object.assign({}, DEFAULT_W) }, snaps: [], stats: { short: { n: 0, hit: 0, sig: {} }, mid: { n: 0, hit: 0, sig: {} } } };
+  function priceNow(id) { const h = S.hist[id]; if (h && Date.now() - h.at < 36 * 3600e3) return h.cl[h.cl.length - 1]; const q = S.arg[id]; return q ? q.price : null; }
+  function learnStep() {
+    if (S.demo || !S.pred) return;
+    const now = Date.now(), day = new Date().toISOString().slice(0, 10);
+    // 1) evaluar fotos viejas
+    LEARN.snaps.forEach((sn) => {
+      if (sn.done || now - sn.t < HORIZON_DAYS[sn.h] * 864e5 * (sn.h === 'mid' ? 1.4 : 0.85)) return;
+      const st = LEARN.stats[sn.h], w = LEARN.w[sn.h], eta = 0.06;
+      Object.entries(sn.sig).forEach(([id, sig]) => {
+        const p0 = sn.px[id], p1 = priceNow(id); if (!p0 || !p1) return;
+        const ret = (p1 - p0) / p0; if (Math.abs(ret) < 0.003) return;
+        if (Math.abs(sig.e) > 0.08) { st.n++; if (Math.sign(sig.e) === Math.sign(ret)) st.hit++; }
+        SIGNALS.forEach((k, i) => {
+          const z = sig.z[i]; if (Math.abs(z) < 0.1) return;
+          const ok = Math.sign(z) === Math.sign(ret);
+          const ss = st.sig[k] || (st.sig[k] = [0, 0]); ss[1]++; if (ok) ss[0]++;
+          if (!ok) w[k] *= (1 - eta);
+        });
+      });
+      const sum = SIGNALS.reduce((a, k) => a + w[k], 0);
+      SIGNALS.forEach((k) => { w[k] = Math.max(0.05, w[k] / sum); });
+      sn.done = true;
+    });
+    LEARN.snaps = LEARN.snaps.filter((sn) => !sn.done || now - sn.t < 20 * 864e5).slice(-40);
+    // 2) una foto por día y horizonte
+    if (!LEARN.snaps.some((sn) => sn.day === day && sn.h === S.horizon)) {
+      const px = {}, sig = {};
+      Object.entries(S.pred.byId).forEach(([id, p]) => { const v = priceNow(id); if (v && p.cov >= 2) { px[id] = v; sig[id] = { e: p.score, z: SIGNALS.map((k) => +p.z[k].toFixed(3)) }; } });
+      if (Object.keys(px).length) LEARN.snaps.push({ day, h: S.horizon, t: now, px, sig });
+    }
+    store('learn', LEARN);
+  }
+
+  function computeSignals(evScores) {
+    const now = Date.now();
+    const half = S.horizon === 'short' ? 12 : 48;                 // horas de vida media de una noticia
+    const decay = (t) => Math.pow(0.5, Math.max(0, now - t) / 3600e3 / half);
+    const raw = { ev: {}, news: {}, fac: {}, mom: {} };
+    // eventos
+    evScores.forEach((x) => { raw.ev[x.ins.id] = x.s; });
+    // sentimiento y factores en titulares
+    const F = {};
+    S.pool.forEach((n) => {
+      const d = decay(n.t); if (d < 0.02) return;
+      const title = n.title || '';
+      (n.factors || []).forEach((f) => {
+        if (!M.priceFactors.includes(f)) return;
+        const fd = dirNear(title, M.factorWords.find((w) => w.f === f).re);
+        if (fd) F[f] = (F[f] || 0) + fd * d;
+      });
+      const s0 = n.sent || 0; if (!s0) return;
+      M.entities.forEach((e) => { if (e.re.test(title)) e.ids.forEach((id) => { if (instById(id)) raw.news[id] = (raw.news[id] || 0) + s0 * d; }); });
+      M.marketScopes.forEach((sc) => {
+        if (!sc.re.test(title)) return;
+        const sd = dirNear(title, sc.re) * (sc.inverse ? -1 : 1);
+        const sg = sd ? sd * Math.max(0.4, Math.abs(s0)) : s0;
+        (sc.ids || []).forEach((id) => { raw.news[id] = (raw.news[id] || 0) + sg * sc.w * d; });
+        allInstruments().forEach((i) => { if ((sc.types || []).includes(i.type)) raw.news[i.id] = (raw.news[i.id] || 0) + sg * sc.w * d; });
+      });
+    });
+    allInstruments().forEach((ins) => {
+      let f = 0; Object.entries(ins.sens).forEach(([k, v]) => { f += (F[k] || 0) * v; });
+      raw.fac[ins.id] = f;
+      const m = momentum(ins.id, S.horizon); if (m != null) raw.mom[ins.id] = m;
+    });
+    // normalización robusta de cada señal a [-1, 1]
+    const scale = {};
+    SIGNALS.forEach((k) => {
+      const v = Object.values(raw[k]).map(Math.abs).filter((x) => x > 1e-6).sort((a, b) => a - b);
+      scale[k] = k === 'mom' ? 1.2 : Math.max(v.length ? v[Math.floor(v.length * 0.75)] : 1, 1e-3);
+    });
+    const w = LEARN.w[S.horizon];
+    const byId = {};
+    allInstruments().forEach((ins) => {
+      const z = {}; let num = 0, den = 0, absum = 0, cov = 0;
+      SIGNALS.forEach((k) => {
+        const r = raw[k][ins.id];
+        z[k] = r == null ? 0 : Math.tanh(r / scale[k]);
+        if (r != null && Math.abs(z[k]) > 0.05) { cov++; num += w[k] * z[k]; den += w[k]; absum += w[k] * Math.abs(z[k]); }
+      });
+      const score = den ? num / Math.max(den, 0.5) : 0;
+      const agree = absum ? Math.abs(num) / absum : 0;               // 1 = todas las señales apuntan igual
+      const conf = clamp(0.15 + 0.07 * cov + 0.55 * agree * agree, 0, 0.92); // el desacuerdo entre señales baja mucho la confianza
+      const prob = 0.5 + 0.5 * Math.tanh(1.3 * score) * 0.62 * conf; // probabilidades moderadas a propósito
+      byId[ins.id] = { score, prob, conf, cov, z, agree };
+    });
+    // índice de riesgo geopolítico (participación de amenazas y actos en las noticias de 24 h)
+    const day = S.pool.filter((n) => now - n.t < 24 * 3600e3);
+    const thr = day.filter((n) => n.gpr === 'threat').length, act = day.filter((n) => n.gpr === 'act').length;
+    S.gpr = { threat: thr, act, total: day.length, idx: day.length ? Math.round(((thr * 1.2 + act) / day.length) * 100) : 0 };
+    S.pred = { byId, w, scale };
   }
 
   function computeRisk() {
@@ -551,6 +748,7 @@
     M.instruments.forEach((i) => { S.arg[i.id] = { price: (i.type === 'Bonos' ? 80000 : 3000) * (0.3 + rnd() * 3), chg: (rnd() - 0.45) * 5 }; });
     S.lecaps = ['S28N6', 'S30E7', 'S31M7', 'T30J7'].map((s) => ({ id: s, name: (s[0] === 'S' ? 'LECAP ' : 'BONCAP ') + s, type: 'LECAPs', src: 'arg_notes', sens: M.lecapSens }));
     S.lecaps.forEach((l) => { S.arg[l.id] = { price: 100 + rnd() * 20, chg: (rnd() - 0.4) * 0.6 }; });
+    allInstruments().forEach((i) => { const cl = []; let v = 100, dr = (rnd() - 0.5) * 0.006; for (let k = 0; k < 64; k++) { v *= 1 + dr + (rnd() - 0.5) * 0.025; cl.push(v); } S.hist[i.id] = { cl, at: Date.now() }; });
     const now = Date.now();
     S.disasters = [
       { id: 'demo1', type: 'EQ', title: 'Sismo M6.4 · costa de Japón (ejemplo)', place: 'Japón', lat: 36.2, lon: 141.5, sev: 0.65, mag: 6.4, t: now - 3 * 3600e3, link: 'https://earthquake.usgs.gov', src: 'Ejemplo' },
@@ -577,7 +775,12 @@
       ['Corea del Norte lanza un misil balístico; el KOSPI abre a la baja', 160],
       ['La sequía golpea la cosecha de soja y el riesgo país argentino sube', 190],
       ['Rheinmetall y las acciones de defensa europeas suben tras nuevo paquete de ayuda militar', 240],
-      ['Junta de Malí y grupos yihadistas: el uranio de Níger vuelve al foco', 320]
+      ['Junta de Malí y grupos yihadistas: el uranio de Níger vuelve al foco', 320],
+      ['El Merval sube 4% y el riesgo país cae a mínimos de siete años', 15],
+      ['YPF anuncia récord de producción en Vaca Muerta', 35],
+      ['Wall Street cae por temores de recesión en Estados Unidos', 50],
+      ['Nvidia supera las expectativas y sus acciones trepan', 65],
+      ['Los bonos argentinos ganan terreno tras la licitación del Tesoro', 90]
     ];
     S.pool = demo.map(([title, m], i) => analyze({ title, link: 'https://news.google.com', source: 'Ejemplo (sin conexión)', t: now - m * 60000, desc: 'Titular de demostración: la app muestra noticias reales cuando tiene conexión desde el teléfono.', key: 'demo' + i }));
     publishNews(false);
@@ -676,7 +879,7 @@
   function projBadge(id) {
     const p = S.proj && S.proj.byId[id];
     if (!p || Math.abs(p.n) < 8) return '<span class="pbadge flat">neutral</span>';
-    return `<span class="pbadge ${p.n > 0 ? 'up' : 'down'}">${p.n > 0 ? '▲ a favor' : '▼ en contra'} ${Math.abs(p.n)}</span>`;
+    return `<span class="pbadge ${p.n > 0 ? 'up' : 'down'}">${p.n > 0 ? '▲' : '▼'} ${Math.round((p.prob || 0.5) * 100)}% suba</span>`;
   }
 
   function iolRow(id, rel) {
@@ -740,6 +943,7 @@
   function newsCard(n) {
     const tags = n.conf.map((id) => `<span class="tag conf">${esc(conflictById[id].short)}</span>`)
       .concat(n.dis ? [`<span class="tag" style="color:${M.disasterTypes[n.dis].color};background:rgba(255,255,255,.06)">${esc(M.disasterTypes[n.dis].name)}</span>`] : [])
+      .concat(n.market && Math.abs(n.sent || 0) >= 0.2 ? [`<span class="tag tone ${n.sent > 0 ? 'up' : 'down'}">Tono ${n.sent > 0 ? 'positivo' : 'negativo'}</span>`] : [])
       .concat(n.assets.slice(0, 2).map((s) => { const q = S.quotes[s]; return `<span class="tag ${chgClass(q && q.chg)}">${esc(assetById[s].name)} ${q ? fmtChg(q.chg) : ''}</span>`; }));
     const clip = S.clips.find((c) => (n.conf.length && c.conf.some((x) => n.conf.includes(x))) || (n.dis && c.dis === n.dis));
     return `<article class="news ${n.isNew ? 'fresh' : ''}" data-news="${esc(n.key)}">
@@ -773,7 +977,7 @@
       <h2>Índice de tensión global</h2>
       <div class="big">${S.risk == null ? '—' : r}<span style="font-size:15px;color:var(--muted);font-weight:600"> / 100 · ${label}</span></div>
       <div class="bar"><i style="left:calc(${r}% - 2px)"></i></div>
-      <p>VIX ${p.vix != null ? nf(1).format(p.vix) : '—'} · conflictos ${Math.round(p.heatScore || 0)}/100 · desastres ${Math.round(p.disScore || 0)}/100 · petróleo ${fmtChg(p.oil)} · oro ${fmtChg(p.gold)}.</p>`;
+      <p>Riesgo geopolítico (método GPR): <b>${S.gpr ? S.gpr.idx : '—'}</b> · ${S.gpr ? S.gpr.threat + ' amenazas y ' + S.gpr.act + ' ataques en las noticias de 24 h' : ''}<br>VIX ${p.vix != null ? nf(1).format(p.vix) : '—'} · conflictos ${Math.round(p.heatScore || 0)}/100 · desastres ${Math.round(p.disScore || 0)}/100 · petróleo ${fmtChg(p.oil)} · oro ${fmtChg(p.gold)}.</p>`;
     if (S.mktTab === 'arg') {
       const types = ['Acciones', 'CEDEARs', 'ETFs', 'Bonos', 'LECAPs'];
       $('#marketList').innerHTML = types.map((t) => {
@@ -1173,8 +1377,9 @@
       <div class="kicker">${esc(ins.type)} · BYMA · operable en IOL</div>
       <h2>${esc(ins.name)} <small class="muted">${esc(id)}</small></h2>
       <div class="pxline"><span class="bigpx">${q ? '$' + fmtPrice(q.price) : '—'}</span><span class="chg ${c}">${q && q.chg != null ? fmtChg(q.chg) : 'sin datos'}</span></div>
-      <h5>Proyección por eventos (${S.horizon === 'short' ? 'días' : 'semanas'})</h5>
-      ${p ? `<div class="pmeter"><i style="left:${50 + p.n / 2}%"></i></div><div class="pmeter-lbl"><span>en contra</span><b class="${p.n >= 0 ? 'up' : 'down'}-t">${p.n > 0 ? '+' : ''}${p.n}</b><span>a favor</span></div>${why}` : '<p class="muted">Sin datos suficientes.</p>'}
+      <h5>Predicción (${S.horizon === 'short' ? 'próximos días' : 'próximas semanas'})</h5>
+      ${p ? predBlock(id) : '<p class="muted">Sin datos suficientes.</p>'}
+      ${why ? '<h5>Eventos que lo mueven</h5>' + why : ''}
       <h5>Sensibilidad a factores</h5><div class="tags">${sens}</div>
       <h5>Noticias que lo mencionan o afectan</h5>${miniNews(news)}
       <div class="row-btns"><button class="btn" data-open="${esc(M.iolUrl(id))}">Ver en IOL</button><button class="btn ghost" data-go="proj" data-focus="i:${esc(id)}">Ver en proyección</button></div>
@@ -1197,15 +1402,38 @@
     fillReaction(n);
   }
 
+  function predBlock(id) {
+    const pr = S.pred && S.pred.byId[id]; if (!pr) return '';
+    const pct = Math.round(pr.prob * 100);
+    const w = S.pred.w;
+    const rows = SIGNALS.map((k) => {
+      const z = pr.z[k]; const has = Math.abs(z) > 0.05;
+      return `<div class="sig"><span class="sig-n">${SIGNAL_NAMES[k]} <small>peso ${Math.round(w[k] * 100)}%</small></span>
+        <span class="sig-bar"><i class="${z >= 0 ? 'up' : 'down'}" style="${z >= 0 ? 'left:50%' : 'right:50%'};width:${Math.abs(z) * 50}%"></i></span>
+        <b class="${has ? (z >= 0 ? 'up' : 'down') + '-t' : 'muted'}">${has ? (z > 0 ? '+' : '') + Math.round(z * 100) : '—'}</b></div>`;
+    }).join('');
+    return `<div class="prob ${pct >= 52 ? 'up' : pct <= 48 ? 'down' : ''}"><b>${pct}%</b><span>probabilidad estimada de suba<br><small>confianza ${Math.round(pr.conf * 100)}% · ${pr.cov} de 4 señales con datos</small></span></div>${rows}`;
+  }
+
+  function modelStats() {
+    const st = LEARN.stats[S.horizon];
+    const per = SIGNALS.map((k) => { const v = st.sig[k]; return v && v[1] ? `${SIGNAL_NAMES[k]} ${Math.round(v[0] / v[1] * 100)}% (${v[1]})` : null; }).filter(Boolean);
+    const pending = LEARN.snaps.filter((sn) => !sn.done && sn.h === S.horizon).length;
+    return st.n ? `<p><b>Aciertos de dirección: ${Math.round(st.hit / st.n * 100)}%</b> en ${st.n} predicciones evaluadas.${per.length ? '<br><small class="muted">Por señal: ' + per.join(' · ') + '</small>' : ''}</p>`
+      : `<p class="muted">El modelo todavía está aprendiendo: guarda una foto por día y la compara con el precio ${S.horizon === 'short' ? 'al día siguiente' : 'una semana después'}. ${pending ? pending + ' predicción(es) esperando resultado.' : 'La primera foto se guarda hoy.'}</p>`;
+  }
+
   function showRanking() {
     if (!S.proj) return;
     openSheet(`
       <div class="kicker">Proyección ${S.horizon === 'short' ? 'a días' : 'a semanas'} · ${S.proj.ev.length} eventos</div>
       <h2>Quién gana y quién pierde</h2>
-      <p>Cada evento empuja factores (petróleo, defensa, riesgo…) y cada instrumento de IOL tiene una exposición a esos factores. El puntaje va de −100 a +100.</p>
+      <p>Combina cuatro señales: eventos geopolíticos (con un índice de riesgo al estilo GPR), el sentimiento de las noticias financieras, la dirección de petróleo, oro y granos en los titulares, y el momentum de precio ajustado por volatilidad. Los pesos se ajustan solos según qué señal viene acertando.</p>
+      <div class="wts">${SIGNALS.map((k) => `<span><b>${Math.round(S.pred.w[k] * 100)}%</b>${SIGNAL_NAMES[k]}</span>`).join('')}</div>
+      ${modelStats()}
       <div class="two"><div><h5 class="up-t">A favor</h5>${S.proj.favor.slice(0, 12).map((x) => iolRow(x.ins.id)).join('') || '<p class="muted">—</p>'}</div>
       <div><h5 class="down-t">En contra</h5>${S.proj.contra.slice(0, 12).map((x) => iolRow(x.ins.id)).join('') || '<p class="muted">—</p>'}</div></div>
-      <p class="fine">Modelo heurístico; no predice precios ni es asesoramiento financiero.</p>`);
+      <p class="fine">Estimación estadística con datos públicos: no garantiza resultados ni es asesoramiento financiero.</p>`);
   }
 
   /* ================= GLOBO / MAPA ================= */
@@ -2121,6 +2349,8 @@
     every('radios', 6 * 3600e3, refreshRadios, force && !S.radios.length);
     every('strikes', 300e3, refreshStrikes, force);
     every('storms', 900e3, refreshStorms, force);
+    every('hist', 1800e3, refreshHistory, force);
+    every('learn', 600e3, async () => learnStep(), false);
     renderHeader();
   }
 
