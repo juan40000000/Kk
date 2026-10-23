@@ -29,7 +29,6 @@ import android.widget.FrameLayout;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
@@ -40,7 +39,6 @@ import java.util.zip.GZIPInputStream;
  * Contenedor nativo: un WebView a pantalla completa que carga la interfaz
  * desde assets y le ofrece un puente con:
  *  - HTTP sin restricciones CORS (noticias, desastres, clips, cotizaciones),
- *  - llamadas a la API de Claude con la clave guardada en el teléfono (nunca se expone al JS),
  *  - reproductor de video a pantalla completa,
  *  - radio en segundo plano mediante {@link RadioService}.
  */
@@ -50,8 +48,6 @@ public class MainActivity extends Activity {
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36";
     private static final int MAX_BYTES = 4 * 1024 * 1024;
-    private static final String CLAUDE_URL = "https://api.anthropic.com/v1/messages";
-    private static final String CLAUDE_VERSION = "2026-10-21";
     // Origen con el que se incrusta el reproductor de YouTube (YouTube exige un Referer)
     private static final String VIDEO_ORIGIN = "https://com.pulsoglobal.app";
 
@@ -95,6 +91,7 @@ public class MainActivity extends Activity {
         });
         setContentView(web);
         web.loadUrl("file:///android_asset/web/index.html");
+        prefs().edit().remove("claude_key").apply(); // la versión 3.0 podía guardar una clave de API: se borra
 
         RadioService.listener = new RadioService.Listener() {
             @Override
@@ -222,54 +219,6 @@ public class MainActivity extends Activity {
             });
         }
 
-        // ---------- IA (API de Claude) ----------
-        @JavascriptInterface
-        public boolean aiHasKey() {
-            return prefs().getString("claude_key", "").length() > 0;
-        }
-
-        @JavascriptInterface
-        public void aiSetKey(String key) {
-            prefs().edit().putString("claude_key", key == null ? "" : key.trim()).apply();
-        }
-
-        /** Envía el cuerpo JSON a la Messages API. Devuelve {"status":N,"body":"..."} codificado. */
-        @JavascriptInterface
-        public void aiRequest(final String id, final String body, final String beta) {
-            final String key = prefs().getString("claude_key", "");
-            pool.execute(new Runnable() {
-                @Override
-                public void run() {
-                    if (key.length() == 0) {
-                        deliver(id, false, null, "sin clave");
-                        return;
-                    }
-                    try {
-                        HttpURLConnection c = (HttpURLConnection) new URL(CLAUDE_URL).openConnection();
-                        c.setConnectTimeout(15000);
-                        c.setReadTimeout(120000);
-                        c.setDoOutput(true);
-                        c.setRequestMethod("POST");
-                        c.setRequestProperty("content-type", "application/json");
-                        c.setRequestProperty("x-api-key", key);
-                        c.setRequestProperty("anthropic-version", CLAUDE_VERSION);
-                        if (beta != null && beta.length() > 0) c.setRequestProperty("anthropic-beta", beta);
-                        OutputStream out = c.getOutputStream();
-                        out.write(body.getBytes("UTF-8"));
-                        out.close();
-                        int code = c.getResponseCode();
-                        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
-                        byte[] resp = in == null ? new byte[0] : readAll(in);
-                        c.disconnect();
-                        String wrapped = "{\"status\":" + code + ",\"body\":" + jsonQuote(new String(resp, "UTF-8")) + "}";
-                        deliver(id, true, wrapped.getBytes("UTF-8"), null);
-                    } catch (Exception e) {
-                        deliver(id, false, null, String.valueOf(e.getMessage()));
-                    }
-                }
-            });
-        }
-
         // ---------- video ----------
         @JavascriptInterface
         public void playVideo(final String videoId, final String title) {
@@ -391,23 +340,6 @@ public class MainActivity extends Activity {
         if (d.getWindow() != null) d.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         videoDialog = d;
         d.show();
-    }
-
-    private static String jsonQuote(String s) {
-        StringBuilder b = new StringBuilder("\"");
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '"': b.append("\\\""); break;
-                case '\\': b.append("\\\\"); break;
-                case '\n': b.append("\\n"); break;
-                case '\r': b.append("\\r"); break;
-                case '\t': b.append("\\t"); break;
-                default:
-                    if (c < 32) b.append(String.format("\\u%04x", (int) c));
-                    else b.append(c);
-            }
-        }
-        return b.append('"').toString();
     }
 
     private static byte[] readAll(InputStream in) throws Exception {

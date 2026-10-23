@@ -213,7 +213,6 @@
     item.relevant = !offTopic && (item.conf.length > 0 || !!item.dis || warTitle);
     item.loose = !offTopic && (item.relevant || warAll || item.factors.length > 0 || item.market);
     item.iol = relatedInstruments(item);
-    if (item.key && typeof AI !== 'undefined' && AI.cache[item.key]) applyAI(item);
     return item;
   }
 
@@ -323,10 +322,9 @@
     S.online = true; S.lastNewsAt = Date.now();
     publishNews(true);
     afterData();
-    aiProcess();
   }
 
-  // lo que se muestra: los candidatos relevantes (según la IA si clasificó el titular, si no según las reglas)
+  // lo que se muestra: los candidatos que las reglas consideran relevantes
   function publishNews(announce) {
     const fresh = S.pool.filter((n) => n.relevant).slice(0, 240);
     const firstLoad = S.seenNews.size === 0;
@@ -335,7 +333,7 @@
     S.news = fresh;
     if (newOnes && S.view !== 'news') S.unseen += newOnes;
     if (announce && newOnes && !firstLoad) toast(`${newOnes} noticia${newOnes > 1 ? 's' : ''} nueva${newOnes > 1 ? 's' : ''}`);
-    store('news', S.pool.slice(0, 200).map(({ isNew, iol, ai, ...n }) => n));
+    store('news', S.pool.slice(0, 200).map(({ isNew, iol, ...n }) => n));
   }
 
   /* ================= desastres naturales ================= */
@@ -531,7 +529,7 @@
 
   function afterData() {
     computeHeat(); computeProjection(); computeRisk(); buildStrikes();
-    S.news.forEach((n) => { if (n.ai) applyAI(n); else n.iol = relatedInstruments(n); });
+    S.news.forEach((n) => { n.iol = relatedInstruments(n); });
     S.clips.forEach((c) => { c.score = clipScore(c); });
     ConnGraph.rebuild(); ProjGraph.rebuild();
     renderAll();
@@ -746,7 +744,6 @@
     return `<article class="news ${n.isNew ? 'fresh' : ''}" data-news="${esc(n.key)}">
       <div class="meta">${n.isNew ? '<span class="new-pill">NUEVO</span>' : ''}<span class="src">${esc(n.source)}</span>·<span>${ago(n.t)}</span></div>
       <h3>${esc(n.title)}</h3>
-      ${n.aiSummary ? `<p class="ai-line"><span class="ai-pill">IA</span>${esc(n.aiSummary)}</p>` : ''}
       ${tags.length ? `<div class="tags">${tags.join('')}</div>` : ''}
       ${n.iol && n.iol.length ? `<div class="iol-line"><span class="iol-lbl">IOL</span>${n.iol.map(iolChip).join('')}</div>` : ''}
       ${clip ? `<div class="news-clip" data-clip="${esc(clip.vid)}"><span class="nc-thumb" ${clip.thumb ? `style="background-image:url('${esc(clip.thumb)}')"` : ''}>▶</span><span><b>${esc(clip.channel)}</b> ${esc(clip.title.slice(0, 70))}</span></div>` : ''}
@@ -875,195 +872,6 @@
     const c = S.clips.find((x) => x.vid === vid);
     if (NATIVE && window.Native.playVideo) window.Native.playVideo(vid, c ? c.title : '');
     else openUrl('https://www.youtube.com/watch?v=' + vid);
-  }
-
-  /* ================= IA: clasificación de noticias con Claude ================= */
-  // La clave vive en el almacenamiento nativo del teléfono; acá solo se arma el pedido.
-  const AI_MODELS = {
-    'claude-opus-5-5': { label: 'Claude Opus 5.5 · más preciso', price: [4, 20], fallbacks: true },
-    'claude-haiku-5-5': { label: 'Claude Haiku 5.5 · más económico', price: [0.1, 0.5], fallbacks: false }
-  };
-  const AI = {
-    on: load('ai_on') !== false,
-    model: AI_MODELS[load('ai_model')] ? load('ai_model') : 'claude-opus-5-5',
-    cache: load('ai_cache') || {},
-    usage: load('ai_usage') || { calls: 0, inTok: 0, outTok: 0, cost: 0 },
-    noFallback: !!load('ai_nofb'),
-    busy: false, err: null, last: 0
-  };
-  const aiHasKey = () => !!(NATIVE && window.Native.aiHasKey && window.Native.aiHasKey());
-  const aiReady = () => AI.on && aiHasKey();
-
-  function applyAI(n) {
-    const a = AI.cache[n.key];
-    if (!a || a.refused) return;
-    n.ai = a;
-    n.relevant = !!a.relevant;
-    n.conf = a.conflict && a.conflict !== 'none' && conflictById[a.conflict] ? [a.conflict] : [];
-    n.dis = a.disaster && a.disaster !== 'none' && M.disasterTypes[a.disaster] ? a.disaster : null;
-    n.iol = (a.instruments || []).filter((x) => instById(x.id)).slice(0, 4)
-      .map((x) => ({ id: x.id, s: x.dir === 'down' ? -1 : 1, dir: x.dir !== 'neutral', why: x.reason }));
-    n.aiSummary = a.summary || '';
-  }
-
-  function aiSystemPrompt() {
-    const conf = D.conflicts.map((c) => `- ${c.id}: ${c.name} (${c.region})`).join('\n');
-    const ins = allInstruments().map((i) => {
-      const exp = Object.entries(i.sens).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2)
-        .map(([f, v]) => `${M.factors[f].short} ${v > 0 ? '+' : '−'}`).join(', ');
-      return `- ${i.id}: ${i.name} (${i.type}; ${exp})`;
-    }).join('\n');
-    return `Clasificás titulares para una app que cruza guerras y desastres naturales con los mercados. La usa un inversor argentino que opera en IOL (BYMA).
-
-Para cada titular numerado devolvé un objeto con:
-- i: el número del titular.
-- relevant: true solo si trata de un conflicto armado o tensión militar, un desastre natural, o un hecho geopolítico con efecto plausible en los mercados. Deportes (aunque nombren clubes como Huracán, Defensa y Justicia o Ciclón), espectáculos, salud, consumo o farándula: false.
-- conflict: el id del conflicto del listado del que trata el titular, o "none".
-- disaster: tipo de desastre natural real (EQ sismo, TC ciclón/huracán, FL inundación, VO volcán, WF incendio forestal, DR sequía, ST tormenta severa), o "none". Nunca por metáforas ni nombres propios.
-- instruments: hasta 4 instrumentos del listado con un vínculo directo que un analista defendería (empresa nombrada, materia prima o sector afectado de forma explícita o casi inmediata). dir "up" si el hecho la favorece, "down" si la perjudica, "neutral" si el vínculo es claro pero la dirección no. reason: 2 a 4 palabras en español (por ejemplo "petróleo al alza", "más gasto militar"). Si no hay un vínculo claro, dejá la lista vacía: es mejor no vincular que forzar.
-- summary: una frase en español de hasta 140 caracteres sobre por qué importa para los mercados; vacía si relevant es false.
-
-No inventes hechos que no estén en el titular.
-
-Conflictos:
-${conf}
-
-Instrumentos (ticker: nombre, tipo, exposiciones principales):
-${ins}`;
-  }
-
-  function aiSchema() {
-    return {
-      type: 'object', additionalProperties: false, required: ['items'],
-      properties: {
-        items: {
-          type: 'array',
-          items: {
-            type: 'object', additionalProperties: false,
-            required: ['i', 'relevant', 'conflict', 'disaster', 'instruments', 'summary'],
-            properties: {
-              i: { type: 'integer' },
-              relevant: { type: 'boolean' },
-              conflict: { type: 'string', enum: D.conflicts.map((c) => c.id).concat(['none']) },
-              disaster: { type: 'string', enum: Object.keys(M.disasterTypes).concat(['none']) },
-              instruments: {
-                type: 'array',
-                items: {
-                  type: 'object', additionalProperties: false, required: ['id', 'dir', 'reason'],
-                  properties: {
-                    id: { type: 'string', enum: allInstruments().map((x) => x.id) },
-                    dir: { type: 'string', enum: ['up', 'down', 'neutral'] },
-                    reason: { type: 'string' }
-                  }
-                }
-              },
-              summary: { type: 'string' }
-            }
-          }
-        }
-      }
-    };
-  }
-
-  function aiCall(body, beta) {
-    return new Promise((res, rej) => {
-      const id = 'a' + (++reqSeq); pending[id] = { res, rej };
-      setTimeout(() => { if (pending[id]) { delete pending[id]; rej(new Error('timeout')); } }, 150000);
-      window.Native.aiRequest(id, JSON.stringify(body), beta || '');
-    }).then((t) => JSON.parse(t));
-  }
-
-  async function aiClassify(batch) {
-    const model = AI.model;
-    const body = {
-      model, max_tokens: 16000,
-      system: aiSystemPrompt(),
-      messages: [{ role: 'user', content: batch.map((n, i) => `${i}. [${n.source}] ${n.title}${n.desc ? ' — ' + n.desc.slice(0, 220) : ''}`).join('\n') }],
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: aiSchema() } }
-    };
-    let beta = '';
-    if (AI_MODELS[model].fallbacks && !AI.noFallback) { body.fallbacks = 'default'; beta = 'server-side-fallback-2026-07-01'; }
-    let r = await aiCall(body, beta);
-    if (r.status === 400 && beta && /fallback/i.test(r.body)) {
-      AI.noFallback = true; store('ai_nofb', true);
-      delete body.fallbacks; r = await aiCall(body, '');
-    }
-    if (r.status === 401 || r.status === 403) throw Object.assign(new Error('Clave inválida o sin permisos'), { fatal: true });
-    if (r.status !== 200) throw new Error('API ' + r.status);
-    const msg = JSON.parse(r.body);
-    const u = msg.usage || {};
-    AI.usage.calls++; AI.usage.inTok += u.input_tokens || 0; AI.usage.outTok += u.output_tokens || 0;
-    const pr = AI_MODELS[model].price;
-    AI.usage.cost += ((u.input_tokens || 0) * pr[0] + (u.output_tokens || 0) * pr[1]) / 1e6;
-    store('ai_usage', AI.usage);
-    if (msg.stop_reason === 'refusal') { batch.forEach((n) => { AI.cache[n.key] = { refused: true, t: Date.now() }; }); return; }
-    if (msg.stop_reason === 'max_tokens') throw new Error('respuesta incompleta');
-    const text = (msg.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-    const data = JSON.parse(text);
-    (data.items || []).forEach((it) => {
-      const n = batch[it.i]; if (!n) return;
-      AI.cache[n.key] = { relevant: it.relevant, conflict: it.conflict, disaster: it.disaster, instruments: it.instruments, summary: it.summary, t: Date.now() };
-    });
-  }
-
-  async function aiProcess() {
-    if (!aiReady() || AI.busy) return;
-    const todo = S.pool.filter((n) => !AI.cache[n.key]).sort((a, b) => b.t - a.t).slice(0, 50);
-    if (!todo.length) return;
-    AI.busy = true; AI.err = null;
-    try {
-      for (let i = 0; i < todo.length; i += 25) await aiClassify(todo.slice(i, i + 25));
-      AI.last = Date.now();
-    } catch (e) {
-      AI.err = e.message;
-      if (e.fatal) toast('IA: ' + e.message);
-    } finally {
-      AI.busy = false;
-      // podar la caché: quedan las 800 clasificaciones más recientes
-      const keys = Object.keys(AI.cache);
-      if (keys.length > 800) keys.sort((a, b) => AI.cache[a].t - AI.cache[b].t).slice(0, keys.length - 800).forEach((k) => delete AI.cache[k]);
-      store('ai_cache', AI.cache);
-      S.pool.forEach(applyAI);
-      publishNews();
-      afterData();
-    }
-  }
-
-  function showSettings() {
-    const has = aiHasKey();
-    const u = AI.usage;
-    const classified = Object.keys(AI.cache).length;
-    openSheet(`
-      <div class="kicker">Ajustes</div><h2>Inteligencia artificial</h2>
-      <p>Con una clave de la API de Claude, cada titular nuevo se clasifica con IA: si es relevante, de qué conflicto o desastre trata, qué instrumentos de IOL afecta, en qué dirección y por qué. Sin clave, la app usa reglas de palabras clave.</p>
-      ${NATIVE ? `
-      <div class="set-row"><span>Estado</span><b class="${has ? 'up' : 'down'}-t">${has ? (AI.on ? 'Activa' : 'Pausada') : 'Sin clave'}</b></div>
-      <label class="set-lbl">Clave de API (se guarda solo en este teléfono)</label>
-      <input id="aiKey" class="set-input" type="password" autocomplete="off" placeholder="${has ? '•••••••• guardada' : 'sk-ant-…'}">
-      <div class="row-btns"><button class="btn" id="aiSave">Guardar clave</button>${has ? '<button class="btn ghost" id="aiDel">Borrar</button>' : ''}<button class="btn ghost" id="aiToggle">${AI.on ? 'Pausar IA' : 'Activar IA'}</button></div>
-      <label class="set-lbl">Modelo</label>
-      <div class="seg wide" id="aiModelSeg">${Object.entries(AI_MODELS).map(([id, m]) => `<button class="${AI.model === id ? 'on' : ''}" data-aimodel="${id}">${esc(m.label)}</button>`).join('')}</div>
-      <div class="stats">
-        <div class="stat"><b>${classified}</b><span>titulares clasificados</span></div>
-        <div class="stat"><b>${u.calls}</b><span>llamadas</span></div>
-        <div class="stat"><b>US$ ${nf(2).format(u.cost)}</b><span>costo estimado</span></div>
-      </div>
-      ${AI.err ? `<p class="warn">Último error: ${esc(AI.err)}</p>` : ''}
-      ${AI.busy ? '<p class="muted">Clasificando…</p>' : ''}
-      <div class="row-btns"><button class="btn ghost" id="aiRun">Clasificar pendientes</button><button class="btn ghost" id="aiReset">Reclasificar todo</button></div>
-      <p class="fine left">Solo se envían titulares y bajadas públicas. Cada titular se clasifica una vez y queda guardado. La clave se crea en console.anthropic.com.</p>`
-      : '<p class="warn">Disponible en la app instalada en el teléfono.</p>'}`);
-    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
-    on('aiSave', () => {
-      const v = $('#aiKey').value.trim();
-      if (!/^sk-ant-/.test(v)) { toast('La clave debería empezar con sk-ant-'); return; }
-      window.Native.aiSetKey(v); AI.err = null; toast('Clave guardada'); showSettings(); aiProcess();
-    });
-    on('aiDel', () => { window.Native.aiSetKey(''); toast('Clave borrada'); showSettings(); });
-    on('aiToggle', () => { AI.on = !AI.on; store('ai_on', AI.on); showSettings(); if (AI.on) aiProcess(); });
-    on('aiRun', () => { aiProcess(); toast('Clasificando titulares pendientes…'); setTimeout(showSettings, 400); });
-    on('aiReset', () => { AI.cache = {}; store('ai_cache', {}); S.pool.forEach((n) => { delete n.ai; analyze(n); }); aiProcess(); toast('Reclasificando…'); setTimeout(showSettings, 400); });
-    $$('#aiModelSeg button').forEach((b) => b.addEventListener('click', () => { AI.model = b.dataset.aimodel; store('ai_model', AI.model); showSettings(); }));
   }
 
   /* ================= ¿ya se movió? precio antes vs. después de la noticia ================= */
@@ -1378,10 +1186,9 @@ ${ins}`;
       <div class="kicker">${esc(n.source)} · ${ago(n.t)}</div>
       <h2 style="font-size:19px;line-height:1.3">${esc(n.title)}</h2>
       ${n.desc ? `<p>${esc(n.desc)}</p>` : ''}
-      ${n.aiSummary ? `<div class="ai-sum"><span class="ai-pill">IA</span>${esc(n.aiSummary)}</div>` : ''}
       ${(n.iol && n.iol.length) || n.assets.length ? '<h5>¿Ya se movió?</h5><div id="reactBox"><p class="muted">Calculando reacción del precio…</p></div>' : ''}
       ${n.conf.length ? '<h5>Conflicto</h5>' + n.conf.map((id) => `<button class="mini-news" data-conf="${id}">${esc(conflictById[id].name)}<small>${esc(conflictById[id].region)}</small></button>`).join('') : ''}
-      ${n.iol && n.iol.length ? `<h5>Activos relacionados en IOL ${n.ai ? '<span class="ai-pill">IA</span>' : ''}</h5><p class="fine left">▲/▼ = efecto esperado por esta noticia y su motivo; sin flecha = relacionado, sin dirección clara.</p>` + n.iol.map((x) => iolRow(x.id, x)).join('') : ''}
+      ${n.iol && n.iol.length ? `<h5>Activos relacionados en IOL</h5><p class="fine left">▲/▼ = efecto esperado por esta noticia y su motivo; sin flecha = relacionado, sin dirección clara.</p>` + n.iol.map((x) => iolRow(x.id, x)).join('') : ''}
       ${clipsFor((c) => (n.conf.length && c.conf.some((x) => n.conf.includes(x))) || (n.dis && c.dis === n.dis))}
       ${n.assets.length ? '<h5>Mercados globales</h5>' + n.assets.map(marketRow).join('') : ''}
       <div class="row-btns"><button class="btn" data-open="${esc(n.link)}">Leer la nota</button><button class="btn ghost" data-share="${esc(n.key)}">Compartir</button></div>`);
@@ -2110,7 +1917,6 @@ ${ins}`;
     b.classList.toggle('on'); ConnGraph.toggleGroup(b.dataset.g, b.classList.contains('on'));
   });
   $('#plToggle').addEventListener('click', toggleRadio);
-  $('#settingsBtn').addEventListener('click', showSettings);
   $('#plClose').addEventListener('click', stopRadio);
 
   // Delegación de clicks
@@ -2177,7 +1983,6 @@ ${ins}`;
     every('radios', 6 * 3600e3, refreshRadios, force && !S.radios.length);
     every('strikes', 300e3, refreshStrikes, force);
     every('storms', 900e3, refreshStorms, force);
-    every('ai', 120e3, aiProcess, false);
     renderHeader();
   }
 

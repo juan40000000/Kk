@@ -11,8 +11,7 @@ App Android que cruza **noticias en vivo de guerras y conflictos** con **las bol
 - **Mercados**: Argentina · IOL (acciones, CEDEARs, ETFs, bonos AL/GD y LECAPs/BONCAPs detectadas en vivo) y Mundo (índices, commodities, divisas), más un índice de tensión global.
 - **En vivo**: radios de noticias en vivo (Argentina e internacionales, vía radio-browser.info) con reproductor que sigue sonando en segundo plano, y clips recientes de DW, France 24, CNN en Español, BBC Mundo, TN, Al Jazeera, Reuters y Bloomberg ordenados por relevancia.
 
-**Novedades 3.0**
-- **IA (opcional)**: con una clave de la API de Claude (⚙ Ajustes), cada titular nuevo se clasifica con Claude (Opus 5.5 por defecto, Haiku 5.5 opcional): relevancia, conflicto o desastre, instrumentos de IOL con dirección y motivo, y un resumen de por qué importa. La clave queda en el almacenamiento privado del teléfono y la llamada la hace el código nativo.
+**Novedades 3.x** (todo con fuentes gratuitas, sin claves ni APIs pagas)
 - **¿Ya se movió?**: en cada noticia, el precio al momento de la publicación contra el último (barras de 5 min; CEDEARs medidos con su acción en Nueva York).
 - **Videos dentro de la app** (reproductor a pantalla completa) y **radio en segundo plano** con controles en la notificación y la pantalla de bloqueo.
 - **Mapa vivo**: misiles con trayectoria y explosiones donde se reportan ataques (GDELT y ciudades citadas en las noticias; el origen es ilustrativo) y huracanes reales (NHC y GDACS) con su categoría, vientos y rumbo proyectado.
