@@ -168,35 +168,99 @@
   /* ================= análisis de textos ================= */
   const WAR_RE = /guerra|ataque|bombarde|misil|militar|ofensiva|tropas|\bdron|alto el fuego|tregua|invasi|conflicto|combat|reh[ée]n|sancion|ej[ée]rcito|\bwar\b|airstrike|strike|missile|troops|ceasefire|hostage|military|attack|sanction|nuclear|frontera|insurg|yihad|rebel/i;
 
+  // Coincidencia por palabra completa (o comienzo de palabra en términos largos): evita "mali" en "normalidad"
+  const kwCache = {};
+  function kwRe(k) {
+    const w = k.trim();
+    if (!kwCache[w]) {
+      const e = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      kwCache[w] = new RegExp('(?<![\\p{L}\\p{N}])' + e + (w.length <= 5 ? '(?![\\p{L}\\p{N}])' : ''), 'iu');
+    }
+    return kwCache[w];
+  }
+  const WEAK = new Set(M.weakKeywords.map((k) => k.trim()));
+  function conflictHits(text, c) {
+    let strong = 0, weak = 0;
+    c.keywords.forEach((k) => { if (kwRe(k).test(text)) { if (WEAK.has(k.trim())) weak++; else strong++; } });
+    return { strong, weak };
+  }
+
   function analyze(item) {
-    const txt = (' ' + item.title + ' ' + (item.desc || '') + ' ').toLowerCase();
-    item.conf = D.conflicts.filter((c) => c.keywords.some((k) => txt.includes(k))).map((c) => c.id);
-    const dw = M.disasterWords.find((w) => w.re.test(txt));
+    const title = ' ' + (item.title || '') + ' ';
+    const desc = ' ' + (item.desc || '') + ' ';
+    const all = title + desc;
+    const offTopic = M.offTopicRe.test(title);
+    const warTitle = WAR_RE.test(title), warAll = WAR_RE.test(all);
+    // conflicto: palabra fuerte en el título, o en la bajada con contexto bélico; las amplias ("China", "Rusia") solo con contexto bélico
+    item.conf = offTopic ? [] : D.conflicts.filter((c) => {
+      const t = conflictHits(title, c), d = conflictHits(desc, c);
+      if (t.strong) return true;
+      if (t.weak && warTitle) return true;
+      if (d.strong && (warAll || d.strong >= 2)) return true;
+      return false;
+    }).map((c) => c.id);
+    // desastre: palabras ambiguas ("Huracán", "Ciclón") necesitan contexto meteorológico
+    const dw = offTopic ? null : M.disasterWords.find((w) => w.re.test(title) && (!w.ctx || M.disasterCtx.test(all)));
     item.dis = dw ? dw.t : null;
     const assets = new Set();
-    D.marketWords.forEach((w) => { if (w.re.test(txt)) w.assets.forEach((a) => assets.add(a)); });
+    if (!offTopic) D.marketWords.forEach((w) => { if (w.re.test(title)) w.assets.forEach((a) => assets.add(a)); });
     item.conf.forEach((id) => conflictById[id].assets.slice(0, 2).forEach((a) => assets.add(a)));
     item.assets = Array.from(assets).slice(0, 4);
-    item.factors = M.factorWords.filter((w) => w.re.test(txt)).map((w) => w.f);
-    item.market = D.marketWords.some((w) => w.re.test(txt));
-    item.relevant = item.conf.length > 0 || !!item.dis || WAR_RE.test(txt);
+    item.factors = offTopic ? [] : M.factorWords.filter((w) => w.re.test(all)).map((w) => w.f);
+    item.market = !offTopic && D.marketWords.some((w) => w.re.test(title));
+    item.relevant = !offTopic && (item.conf.length > 0 || !!item.dis || warTitle);
     item.iol = relatedInstruments(item);
     return item;
   }
 
-  // Instrumentos de IOL relacionados con una noticia: shocks de sus eventos + factores que menciona
+  // lugar aproximado de un desastre según el país nombrado en la nota
+  const PLACE_LL = [
+    { re: /argentin|mendoza|c[óo]rdoba|buenos aires|santa fe/i, ll: [-34, -64] }, { re: /chile|per[úu]|bolivia/i, ll: [-25, -70] },
+    { re: /brasil|ecuador|colombia/i, ll: [-10, -55] }, { re: /golfo de m[ée]xico|texas|luisiana|louisiana|florida/i, ll: [27, -90] },
+    { re: /estados unidos|california|eeuu|ee\.uu/i, ll: [37, -100] }, { re: /jap[óo]n|taiw[áa]n|corea|china/i, ll: [33, 132] },
+    { re: /filipinas|indonesia|vietnam/i, ll: [10, 120] }, { re: /turqu[íi]a|ir[áa]n|afganist/i, ll: [35, 45] }, { re: /italia|grecia|espa[ñn]a/i, ll: [40, 15] }
+  ];
+
+  // Instrumentos de IOL vinculados a una noticia, con su motivo:
+  // 1) empresas o bonos nombrados en el texto, 2) factores que la nota menciona (dirección según el título),
+  // 3) canales principales del conflicto o desastre (shock ≥ 0,5). Solo cuentan las exposiciones fuertes de cada instrumento.
   function relatedInstruments(item) {
-    const P = {};
-    const add = (shock, w) => Object.entries(shock).forEach(([f, v]) => { P[f] = (P[f] || 0) + v * w; });
-    item.conf.forEach((id) => add(M.conflictShock[id] || {}, 1));
-    if (item.dis) add(M.disasterShock(item.dis, NaN, NaN), 0.8);
-    const directional = Object.keys(P).length > 0;
-    item.factors.forEach((f) => { P[f] = (P[f] || 0) + 0.3; });
-    if (!Object.keys(P).length) return [];
-    return allInstruments().map((ins) => {
-      let s = 0; Object.entries(ins.sens).forEach(([f, v]) => { s += (P[f] || 0) * v; });
-      return { id: ins.id, s, dir: directional };
-    }).filter((x) => Math.abs(x.s) >= 0.18).sort((a, b) => Math.abs(b.s) - Math.abs(a.s)).slice(0, 5);
+    const title = item.title || '', all = title + ' ' + (item.desc || '');
+    const out = [];
+    const up = M.upRe.test(title), down = M.downRe.test(title);
+    const tdir = up && !down ? 1 : down && !up ? -1 : 0;
+    M.entities.forEach((e) => {
+      if (!e.re.test(all)) return;
+      e.ids.forEach((id) => {
+        if (id === '@lecap') id = S.lecaps[0] && S.lecaps[0].id;
+        if (id && instById(id) && !out.some((x) => x.id === id)) out.push({ id, s: tdir || 0.01, dir: !!tdir, why: 'mencionada', w: 3 });
+      });
+    });
+    const F = {}; const known = {};
+    const add = (f, v, k) => { F[f] = (F[f] || 0) + v; known[f] = known[f] !== false && k; };
+    (item.factors || []).forEach((f) => add(f, tdir ? tdir * 0.6 : 0.5, !!tdir));
+    item.conf.forEach((id) => Object.entries(M.conflictShock[id] || {}).forEach(([f, v]) => { if (v >= 0.5) add(f, v, true); }));
+    if (item.dis) {
+      const ll = PLACE_LL.find((p) => p.re.test(all)) || { ll: [NaN, NaN] };
+      Object.entries(M.disasterShock(item.dis, ll.ll[0], ll.ll[1])).forEach(([f, v]) => { if (v >= 0.5) add(f, v, true); });
+    }
+    const perFactor = {};
+    allInstruments().map((ins) => {
+      let s = 0, best = null;
+      Object.entries(ins.sens).forEach(([f, v]) => {
+        if (Math.abs(v) < 0.5 || !F[f]) return;
+        if (f === 'riskoff' && ins.type !== 'ETFs') return; // el riesgo global solo se liga a índices amplios
+        const x = F[f] * v; s += x;
+        if (!best || Math.abs(x) > Math.abs(best.x)) best = { f, x };
+      });
+      return { id: ins.id, s, best };
+    }).filter((x) => x.best && Math.abs(x.s) >= 0.35).sort((a, b) => Math.abs(b.s) - Math.abs(a.s)).forEach((x) => {
+      if (out.some((o) => o.id === x.id)) return;
+      const f = x.best.f;
+      if ((perFactor[f] = (perFactor[f] || 0) + 1) > 2) return; // no más de 2 por motivo
+      out.push({ id: x.id, s: x.s, dir: known[f] !== false, why: M.factors[f].short, w: 1 });
+    });
+    return out.slice(0, 4);
   }
 
   function parseRSS(xml, feed) {
@@ -595,12 +659,12 @@
     return `<span class="pbadge ${p.n > 0 ? 'up' : 'down'}">${p.n > 0 ? '▲ a favor' : '▼ en contra'} ${Math.abs(p.n)}</span>`;
   }
 
-  function iolRow(id) {
+  function iolRow(id, rel) {
     const ins = instById(id); if (!ins) return '';
     const q = S.arg[id]; const c = chgClass(q && q.chg);
     return `<button class="mrow iol" data-ins="${esc(id)}">
       <div><div class="nm">${esc(ins.name)}</div><div class="sym">${esc(id)} · ${esc(ins.type)}</div></div>
-      ${projBadge(id)}
+      ${rel ? `<span class="pbadge ${!rel.dir ? 'flat' : rel.s > 0 ? 'up' : 'down'}">${rel.dir ? (rel.s > 0 ? '▲ ' : '▼ ') : ''}${esc(rel.why)}</span>` : projBadge(id)}
       <div><div class="px">${q ? '$' + fmtPrice(q.price) : '—'}</div><div class="chg ${c}">${q && q.chg != null ? fmtChg(q.chg) : 'sin datos'}</div></div>
     </button>`;
   }
@@ -608,7 +672,7 @@
   function iolChip(x) {
     const q = S.arg[x.id];
     const cls = !x.dir ? 'rel' : x.s > 0 ? 'up' : 'down';
-    return `<span class="tag ins ${cls}" data-ins="${esc(x.id)}">${x.dir ? (x.s > 0 ? '▲ ' : '▼ ') : ''}${esc(x.id)}${q && q.chg != null ? ` <em class="${chgClass(q.chg)}-t">${fmtChg(q.chg)}</em>` : ''}</span>`;
+    return `<span class="tag ins ${cls}" data-ins="${esc(x.id)}">${x.dir ? (x.s > 0 ? '▲ ' : '▼ ') : ''}${esc(x.id)}${x.why ? `<i class="why-l">${esc(x.why)}</i>` : ''}${q && q.chg != null ? ` <em class="${chgClass(q.chg)}-t">${fmtChg(q.chg)}</em>` : ''}</span>`;
   }
 
   /* ================= momentos clave (fragmentos automáticos) ================= */
@@ -620,7 +684,8 @@
       const clip = S.clips.find((c) => (e.kind === 'conflict' ? c.conf.includes(e.ref) : c.dis && c.dis === (S.disasters.find((d) => d.id === e.ref) || {}).type));
       const affected = S.proj.scores.map((s) => {
         let x = 0; Object.entries(e.shock).forEach(([f, v]) => { x += v * e.w * (s.ins.sens[f] || 0); });
-        return { id: s.ins.id, s: x, dir: true };
+        const top = Object.keys(e.shock).filter((f) => s.ins.sens[f]).sort((a, b) => Math.abs(e.shock[b] * s.ins.sens[b]) - Math.abs(e.shock[a] * s.ins.sens[a]))[0];
+        return { id: s.ins.id, s: x, dir: true, why: top ? M.factors[top].short : '' };
       }).filter((x) => Math.abs(x.s) > 0.05).sort((a, b) => Math.abs(b.s) - Math.abs(a.s));
       const fav = affected.filter((x) => x.s > 0).slice(0, 2); const con = affected.filter((x) => x.s < 0).slice(0, 2);
       return { e, headline: news[0], clip, fav, con, count: news.length };
@@ -871,7 +936,7 @@
       <h2 style="font-size:19px;line-height:1.3">${esc(n.title)}</h2>
       ${n.desc ? `<p>${esc(n.desc)}</p>` : ''}
       ${n.conf.length ? '<h5>Conflicto</h5>' + n.conf.map((id) => `<button class="mini-news" data-conf="${id}">${esc(conflictById[id].name)}<small>${esc(conflictById[id].region)}</small></button>`).join('') : ''}
-      ${n.iol && n.iol.length ? '<h5>Activos relacionados en IOL</h5>' + n.iol.map((x) => iolRow(x.id)).join('') : ''}
+      ${n.iol && n.iol.length ? '<h5>Activos relacionados en IOL</h5><p class="fine left">▲/▼ = efecto esperado por esta noticia y su motivo; sin flecha = relacionado, sin dirección clara.</p>' + n.iol.map((x) => iolRow(x.id, x)).join('') : ''}
       ${clipsFor((c) => (n.conf.length && c.conf.some((x) => n.conf.includes(x))) || (n.dis && c.dis === n.dis))}
       ${n.assets.length ? '<h5>Mercados globales</h5>' + n.assets.map(marketRow).join('') : ''}
       <div class="row-btns"><button class="btn" data-open="${esc(n.link)}">Leer la nota</button><button class="btn ghost" data-share="${esc(n.key)}">Compartir</button></div>`);
@@ -1550,6 +1615,8 @@
     every('radios', 6 * 3600e3, refreshRadios, force && !S.radios.length);
     renderHeader();
   }
+
+  window.PG_DEBUG = { analyze };
 
   // arranque: primero lo guardado, después en vivo
   const cq = load('quotes'); if (cq) S.quotes = cq;

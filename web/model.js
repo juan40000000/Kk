@@ -3,20 +3,20 @@
 window.PG_MODEL = (function () {
   // + significa que el factor "sube" (más precio, más riesgo o más disrupción, según el caso)
   const factors = {
-    oil: { name: 'Petróleo', up: 'sube el crudo' },
-    gas: { name: 'Gas natural', up: 'sube el gas' },
-    gold: { name: 'Oro', up: 'demanda de refugio' },
-    agri: { name: 'Granos / agro', up: 'suben granos y fertilizantes' },
-    metals: { name: 'Metales', up: 'suben cobre y metales' },
-    uranium: { name: 'Uranio', up: 'oferta de uranio en riesgo' },
-    defense: { name: 'Gasto en defensa', up: 'más gasto militar' },
-    shipping: { name: 'Fletes marítimos', up: 'rutas cortadas, fletes más caros' },
-    chips: { name: 'Cadena de chips', up: 'riesgo de disrupción en semiconductores' },
-    aviation: { name: 'Aviación', up: 'espacio aéreo y vuelos afectados' },
-    insurance: { name: 'Siniestros', up: 'pérdidas para aseguradoras' },
-    rebuild: { name: 'Reconstrucción', up: 'demanda de maquinaria y acero' },
-    riskoff: { name: 'Aversión al riesgo', up: 'fuga hacia activos seguros' },
-    argrisk: { name: 'Riesgo Argentina', up: 'sube el riesgo país' }
+    oil: { short: 'Petróleo', name: 'Petróleo', up: 'sube el crudo' },
+    gas: { short: 'Gas', name: 'Gas natural', up: 'sube el gas' },
+    gold: { short: 'Oro', name: 'Oro', up: 'demanda de refugio' },
+    agri: { short: 'Agro', name: 'Granos / agro', up: 'suben granos y fertilizantes' },
+    metals: { short: 'Metales', name: 'Metales', up: 'suben cobre y metales' },
+    uranium: { short: 'Uranio', name: 'Uranio', up: 'oferta de uranio en riesgo' },
+    defense: { short: 'Defensa', name: 'Gasto en defensa', up: 'más gasto militar' },
+    shipping: { short: 'Fletes', name: 'Fletes marítimos', up: 'rutas cortadas, fletes más caros' },
+    chips: { short: 'Chips', name: 'Cadena de chips', up: 'riesgo de disrupción en semiconductores' },
+    aviation: { short: 'Aviación', name: 'Aviación', up: 'espacio aéreo y vuelos afectados' },
+    insurance: { short: 'Seguros', name: 'Siniestros', up: 'pérdidas para aseguradoras' },
+    rebuild: { short: 'Reconstrucción', name: 'Reconstrucción', up: 'demanda de maquinaria y acero' },
+    riskoff: { short: 'Riesgo global', name: 'Aversión al riesgo', up: 'fuga hacia activos seguros' },
+    argrisk: { short: 'Riesgo AR', name: 'Riesgo Argentina', up: 'sube el riesgo país' }
   };
 
   // shock de cada conflicto sobre los factores (0..1)
@@ -94,21 +94,46 @@ window.PG_MODEL = (function () {
 
   // Palabras que vinculan una noticia con un factor (sin dirección)
   const factorWords = [
-    { re: /petr[óo]leo|crudo|\boil\b|brent|wti|opep|opec|vaca muerta/i, f: 'oil' },
-    { re: /\bgas\b|gnl|\blng\b/i, f: 'gas' },
+    { re: /petr[óo]leo|crudo|\boil\b|\bbrent\b|\bwti\b|\bopep\b|\bopec\b|vaca muerta/i, f: 'oil' },
+    { re: /\bgas natural\b|\bgas\b|\bgnl\b|\blng\b|gasoducto/i, f: 'gas' },
     { re: /\boro\b|\bgold\b/i, f: 'gold' },
-    { re: /trigo|ma[íi]z|soja|cereal|grano|fertiliz|wheat|grain|cosecha/i, f: 'agri' },
-    { re: /cobre|litio|aluminio|metal|copper|cobalto/i, f: 'metals' },
+    { re: /\btrigo\b|\bma[íi]z\b|\bsoja\b|cereales|granos|fertilizante|\bwheat\b|\bgrain|cosecha/i, f: 'agri' },
+    { re: /\bcobre\b|\blitio\b|aluminio|\bcopper\b|cobalto|tierras raras/i, f: 'metals' },
     { re: /uranio|uranium/i, f: 'uranium' },
-    { re: /defensa|armas|armamento|weapons|defense|otan|nato/i, f: 'defense' },
-    { re: /flete|naviera|shipping|buque|contenedor|puerto/i, f: 'shipping' },
-    { re: /chips?|semiconductor|tsmc|nvidia/i, f: 'chips' },
-    { re: /vuelos?|aerol[íi]nea|aeropuerto|espacio a[ée]reo|airline/i, f: 'aviation' },
-    { re: /asegurador|reasegur|insur/i, f: 'insurance' },
-    { re: /reconstrucci|infraestructura/i, f: 'rebuild' },
-    { re: /riesgo pa[íi]s|bonos? argentin|merval|milei|caputo|bcra|lecap/i, f: 'argrisk' },
-    { re: /p[áa]nico|volatilidad|desplome|refugio|sell-?off|selloff/i, f: 'riskoff' }
+    { re: /gasto (militar|en defensa)|industria de (la )?defensa|armamento|\barmas\b|misiles|\botan\b|\bnato\b|contratistas de defensa|ministerio de defensa/i, f: 'defense' },
+    { re: /\bfletes?\b|navieras?|\bshipping\b|buques? (mercantes?|cargueros?|petroleros?)|contenedores|transporte mar[íi]timo|canal de (suez|panam[áa])/i, f: 'shipping' },
+    { re: /semiconductor|\bchips?\b|\btsmc\b|\bnvidia\b/i, f: 'chips' },
+    { re: /aerol[íi]neas?|espacio a[ée]reo|vuelos (cancelados|suspendidos|desviados)|\bairlines?\b/i, f: 'aviation' },
+    { re: /asegurador|reasegur|\binsurers?\b/i, f: 'insurance' },
+    { re: /reconstrucci[óo]n/i, f: 'rebuild' },
+    { re: /riesgo pa[íi]s|bonos? (soberanos|argentinos)|\bbcra\b|\blecaps?\b/i, f: 'argrisk' },
+    { re: /p[áa]nico (en|de) (los )?mercados|volatilidad|desplome de (las )?bolsas|activos? refugio|\bsell-?off\b/i, f: 'riskoff' }
   ];
+
+  // Menciones directas de empresas / instrumentos en el texto
+  const entities = [
+    { re: /\bypf\b/i, ids: ['YPFD'] }, { re: /vaca muerta/i, ids: ['YPFD', 'VIST'] }, { re: /\bvista (energy|oil)/i, ids: ['VIST'] },
+    { re: /pampa energ/i, ids: ['PAMP'] }, { re: /\btgs\b|transportadora de gas del sur/i, ids: ['TGSU2'] }, { re: /central puerto/i, ids: ['CEPU'] },
+    { re: /grupo galicia|banco galicia/i, ids: ['GGAL'] }, { re: /banco macro/i, ids: ['BMA'] }, { re: /ternium/i, ids: ['TXAR'] },
+    { re: /\baluar\b/i, ids: ['ALUA'] }, { re: /\bcresud\b/i, ids: ['CRES'] }, { re: /loma negra/i, ids: ['LOMA'] },
+    { re: /\bexxon/i, ids: ['XOM'] }, { re: /\bchevron\b/i, ids: ['CVX'] }, { re: /petrobras/i, ids: ['PBR'] },
+    { re: /lockheed/i, ids: ['LMT'] }, { re: /raytheon|\brtx\b/i, ids: ['RTX'] }, { re: /\bbarrick\b/i, ids: ['B'] },
+    { re: /newmont/i, ids: ['NEM'] }, { re: /freeport/i, ids: ['FCX'] }, { re: /minera vale|mineradora vale|\bvale s\.?a\b/i, ids: ['VALE'] },
+    { re: /cameco/i, ids: ['CCJ'] }, { re: /\bmosaic\b/i, ids: ['MOS'] }, { re: /john deere|\bdeere\b/i, ids: ['DE'] },
+    { re: /caterpillar/i, ids: ['CAT'] }, { re: /berkshire|warren buffett/i, ids: ['BRKB'] }, { re: /delta air|aerol[íi]nea delta/i, ids: ['DAL'] },
+    { re: /\bboeing\b/i, ids: ['BA'] }, { re: /\btsmc\b/i, ids: ['TSM'] }, { re: /\bnvidia\b/i, ids: ['NVDA'] },
+    { re: /mercado ?libre/i, ids: ['MELI'] }, { re: /wall street|s&p ?500/i, ids: ['SPY'] }, { re: /\bnasdaq\b/i, ids: ['QQQ'] },
+    { re: /mercados emergentes/i, ids: ['EEM'] }, { re: /bovespa/i, ids: ['EWZ'] },
+    { re: /riesgo pa[íi]s|bonos? (soberanos|argentinos|en d[óo]lares)|\bal30\b|\bgd30\b|bonares|bonos globales/i, ids: ['GD30', 'AL30'] },
+    { re: /\blecaps?\b|\bboncaps?\b|letras del tesoro/i, ids: ['@lecap'] }
+  ];
+  const upRe = /\bsuben?\b|subi[óo]|dispar|\btrepa|\balza\b|r[ée]cord|m[áa]ximos?|se encarece|repunt|\bganan?\b|\bsoars?\b|\bjumps?\b|\brises?\b|\bsurges?\b/i;
+  const downRe = /\bcaen?\b|cay[óo]|\bbajan?\b|desplom|retroced|m[íi]nimos?|pierden?|se abarata|derrumb|\bplunges?\b|\bfalls?\b|\bdrops?\b|\bslumps?\b/i;
+  // notas de deportes/espectáculos que comparten palabras con los eventos ("Huracán", "Ciclón", "defensa"…)
+  const offTopicRe = /\bvs\.?\s|\bvs\b|partido|f[úu]tbol|liga profesional|\btorneo\b|copa (de la liga|argentina|libertadores|sudamericana|del mundo)|alineaci|formaciones|d[óo]nde ver|cu[áa]ndo juegan|\bhinchas\b|\bgol(es)?\b|campeonato|cl[áa]sico|\bnba\b|\btenis\b|f[óo]rmula 1|\bhor[óo]scopo|telenovela|reality/i;
+  // palabras amplias que solo cuentan si la nota además habla de guerra
+  const weakKeywords = ['rusia', 'russia', 'moscú', 'moscow', 'putin', 'kremlin', 'china', 'beijing', 'pekín', 'xi jinping', 'india ', 'pakistán', 'pakistan', 'caribe', 'caribbean', 'guyana', 'siria', 'syria', 'irak', 'iraq', 'suez', 'nuclear iran', 'seúl', 'seoul', 'rwanda', 'ruanda', 'cobalto', 'cobalt', 'beijing'];
+
 
   // ---------- desastres naturales ----------
   const disasterTypes = {
@@ -121,13 +146,15 @@ window.PG_MODEL = (function () {
     ST: { name: 'Tormenta severa', color: '#90E0EF', icon: '⚡' }
   };
   const disasterWords = [
-    { re: /terremoto|sismo|temblor|earthquake|tsunami/i, t: 'EQ' },
-    { re: /hurac[áa]n|tif[óo]n|cicl[óo]n|hurricane|typhoon|cyclone|tormenta tropical/i, t: 'TC' },
-    { re: /inundaci|crecida|desborde|flood/i, t: 'FL' },
+    { re: /terremoto|\bsismo|earthquake|tsunami/i, t: 'EQ' },
+    { re: /tif[óo]n|tormenta tropical|cicl[óo]n tropical|typhoon|hurricane|cyclone/i, t: 'TC' },
+    { re: /hurac[áa]n|cicl[óo]n/i, t: 'TC', ctx: true },
+    { re: /inundaci|crecida|\bflood/i, t: 'FL' },
     { re: /erupci[óo]n|volc[áa]n|volcano|eruption/i, t: 'VO' },
     { re: /incendio forestal|incendios forestales|wildfire|bushfire/i, t: 'WF' },
     { re: /sequ[íi]a|drought/i, t: 'DR' }
   ];
+  const disasterCtx = /categor[íi]a \d|vientos|toca tierra|tocar[áa] tierra|landfall|evacua|lluvias|marejada|meteorol|\bnhc\b|centro nacional de huracanes|costa|damnificad|v[íi]ctimas|muertos|\bdaños\b|alerta|tormenta|devast|emergencia|km\/h/i;
   const inBox = (lat, lon, a, b, c, d) => lat >= a && lat <= b && lon >= c && lon <= d;
   function regionOf(lat, lon) {
     if (inBox(lat, lon, -56, -21, -74, -53)) return 'argentina';
@@ -215,5 +242,5 @@ window.PG_MODEL = (function () {
   const argFeeds = ['arg_stocks', 'arg_cedears', 'arg_bonds', 'arg_notes'].map((k) => ({ key: k, url: 'https://data912.com/live/' + k }));
   const iolUrl = (sym) => 'https://iol.invertironline.com/titulo/cotizacion/BCBA/' + encodeURIComponent(sym);
 
-  return { factors, conflictShock, instruments, lecapSens, factorWords, disasterTypes, disasterWords, disasterShock, regionOf, disasterFeeds, disasterNewsFeed, radioServers, radios, channels, argFeeds, iolUrl };
+  return { entities, upRe, downRe, offTopicRe, weakKeywords, disasterCtx, factors, conflictShock, instruments, lecapSens, factorWords, disasterTypes, disasterWords, disasterShock, regionOf, disasterFeeds, disasterNewsFeed, radioServers, radios, channels, argFeeds, iolUrl };
 })();

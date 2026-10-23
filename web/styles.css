@@ -290,3 +290,6 @@ body.has-player .legend { bottom: 160px; }
 .tag.ins em { font-style: normal; font-weight: 600; opacity: .9; }
 .seg button { white-space: nowrap; }
 #layerSeg button { padding: 6px 9px; font-size: 12px; }
+
+.tag.ins .why-l { font-style: normal; font-weight: 500; opacity: .75; margin-left: 5px; font-size: .92em; }
+.fine.left { text-align: left; margin: -2px 0 8px; }
