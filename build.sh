@@ -26,8 +26,8 @@ aapt package -f -m -J "$OUT/gen" -M android/AndroidManifest.xml -S android/res \
   -I "$ANDROID_JAR" -A "$OUT/assets" -F "$OUT/unsigned.apk"
 
 echo "› java"
-javac -nowarn -source 8 -target 8 -bootclasspath "$ANDROID_JAR" -classpath "$ANDROID_JAR" \
-  -d "$OUT/classes" $(find "$OUT/gen" android/src -name '*.java') 2>&1 | grep -v "^warning" || true
+javac -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$ANDROID_JAR" -classpath "$ANDROID_JAR" \
+  -d "$OUT/classes" $(find "$OUT/gen" android/src -name '*.java')
 
 echo "› dex"
 "$DX" --dex --min-sdk-version=24 --output="$OUT/classes.dex" "$OUT/classes"

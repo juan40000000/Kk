@@ -239,8 +239,66 @@ window.PG_MODEL = (function () {
     { handle: 'markets', name: 'Bloomberg' }
   ];
 
+
+  // ---------- ataques: ciudades citadas en noticias -> objetivo y origen aproximado ----------
+  // side: de qué lado está la ciudad; from: posibles orígenes de lanzamiento contra ese lado
+  const launch = {
+    ru: [[50.6, 36.6], [51.7, 36.2], [44.9, 34.1], [47.2, 39.7]],        // Bélgorod, Kursk, Crimea, Rostov
+    ua: [[50.9, 34.8], [49.9, 36.2], [48.5, 35.0]],                       // Sumy, Járkov, Dnipró
+    il: [[31.8, 34.8], [32.8, 35.1]],
+    ir: [[32.6, 51.6], [34.3, 47.1]],
+    ye: [[15.4, 44.2], [14.8, 43.0]],
+    lb: [[33.3, 35.4]],
+    gz: [[31.4, 34.4]],
+    us: [[20.5, 38.5], [22.5, 61.5]],                                     // buques en Mar Rojo / Mar Arábigo
+    sd: [[14.0, 30.5], [16.0, 33.5]],
+    cd: [[-1.2, 29.6]],
+    mm: [[19.8, 96.1]],
+    in: [[32.7, 74.9]], pk: [[33.7, 73.1]],
+    vecar: [[13.5, -66.5]]
+  };
+  const cities = [
+    // Ucrania (atacadas desde Rusia)
+    { re: /kiev|kyiv|kíev/i, ll: [50.45, 30.52], c: 'ukr', from: 'ru' }, { re: /j[áa]rkov|kharkiv/i, ll: [49.99, 36.23], c: 'ukr', from: 'ru' },
+    { re: /odesa|odessa/i, ll: [46.48, 30.72], c: 'ukr', from: 'ru' }, { re: /dnipr[oó]|dnipro/i, ll: [48.46, 35.05], c: 'ukr', from: 'ru' },
+    { re: /zaporiy|zaporizh/i, ll: [47.84, 35.14], c: 'ukr', from: 'ru' }, { re: /\blviv\b|le[óo]polis/i, ll: [49.84, 24.03], c: 'ukr', from: 'ru' },
+    { re: /jers[óo]n|kherson/i, ll: [46.64, 32.61], c: 'ukr', from: 'ru' }, { re: /\bsumy\b/i, ll: [50.91, 34.8], c: 'ukr', from: 'ru' },
+    { re: /poltava/i, ll: [49.59, 34.55], c: 'ukr', from: 'ru' }, { re: /kryvy|krivo[ií] rog/i, ll: [47.91, 33.39], c: 'ukr', from: 'ru' },
+    { re: /chern[íi]h|chern[íi]gov/i, ll: [51.49, 31.29], c: 'ukr', from: 'ru' }, { re: /pokrovsk|kramatorsk|donetsk/i, ll: [48.7, 37.5], c: 'ukr', from: 'ru' },
+    // Rusia (atacada desde Ucrania)
+    { re: /mosc[úu]|moscow/i, ll: [55.75, 37.62], c: 'ukr', from: 'ua', needsStrike: true }, { re: /b[ée]lgorod/i, ll: [50.6, 36.59], c: 'ukr', from: 'ua' },
+    { re: /\bkursk\b/i, ll: [51.73, 36.19], c: 'ukr', from: 'ua' }, { re: /briansk|bryansk/i, ll: [53.24, 34.36], c: 'ukr', from: 'ua' },
+    { re: /sebastopol|sevastopol/i, ll: [44.6, 33.52], c: 'ukr', from: 'ua' }, { re: /novoros/i, ll: [44.72, 37.77], c: 'ukr', from: 'ua' },
+    // Gaza / Líbano / Siria (desde Israel)
+    { re: /\bgaza\b/i, ll: [31.5, 34.47], c: 'mideast', from: 'il' }, { re: /\brafah\b/i, ll: [31.29, 34.25], c: 'mideast', from: 'il' },
+    { re: /jan yunis|khan yunis/i, ll: [31.34, 34.3], c: 'mideast', from: 'il' }, { re: /beirut/i, ll: [33.89, 35.5], c: 'mideast', from: 'il' },
+    { re: /\btiro\b|\btyre\b|nabatieh|sur del l[íi]bano|south(ern)? lebanon/i, ll: [33.27, 35.3], c: 'mideast', from: 'il' },
+    { re: /damasco|damascus/i, ll: [33.51, 36.29], c: 'mideast', from: 'il' }, { re: /cisjordania|west bank|yen[íi]n|jenin/i, ll: [32.46, 35.3], c: 'mideast', from: 'il' },
+    // Israel (origen según quién ataca)
+    { re: /tel aviv/i, ll: [32.08, 34.78], c: 'mideast', from: 'auto-il' }, { re: /\bhaifa\b/i, ll: [32.79, 34.99], c: 'mideast', from: 'auto-il' },
+    { re: /jerusal[ée]n|jerusalem/i, ll: [31.77, 35.21], c: 'mideast', from: 'auto-il' }, { re: /\beilat\b/i, ll: [29.56, 34.95], c: 'mideast', from: 'auto-il' },
+    // Irán
+    { re: /teher[áa]n|tehran/i, ll: [35.69, 51.39], c: 'iran', from: 'il' }, { re: /isfah[áa]n/i, ll: [32.65, 51.67], c: 'iran', from: 'il' },
+    { re: /natanz/i, ll: [33.72, 51.73], c: 'iran', from: 'il' }, { re: /ford[oó]w?\b/i, ll: [34.88, 50.99], c: 'iran', from: 'us' },
+    { re: /bushehr/i, ll: [28.97, 50.84], c: 'iran', from: 'il' }, { re: /bandar abb[áa]s|ormuz|hormuz/i, ll: [27.0, 56.3], c: 'iran', from: 'us' },
+    // Yemen / Mar Rojo
+    { re: /san[áa]a?\b|sanaa/i, ll: [15.35, 44.21], c: 'redsea', from: 'auto-ye' }, { re: /hodeid|hudayd/i, ll: [14.8, 42.95], c: 'redsea', from: 'auto-ye' },
+    { re: /mar rojo|red sea|bab el.mandeb|golfo de ad[ée]n/i, ll: [15.6, 41.6], c: 'redsea', from: 'ye' },
+    // Sudán
+    { re: /jartum|khartoum|omdurm[áa]n/i, ll: [15.55, 32.53], c: 'sudan', from: 'sd' }, { re: /el fasher|al.fashir|darfur/i, ll: [13.63, 25.35], c: 'sudan', from: 'sd' },
+    { re: /puerto sud[áa]n|port sudan/i, ll: [19.6, 37.22], c: 'sudan', from: 'sd' },
+    // RD Congo, Myanmar, Cachemira, Caribe
+    { re: /\bgoma\b|bukavu|kivu/i, ll: [-1.68, 29.22], c: 'drc', from: 'cd' },
+    { re: /mandalay|sagaing|rakhine|arakan/i, ll: [21.9, 96.0], c: 'myanmar', from: 'mm' },
+    { re: /srinagar|cachemira india|jammu/i, ll: [34.08, 74.8], c: 'indpak', from: 'pk' }, { re: /muzaffarabad|lahore|bahawalpur|cachemira paquist/i, ll: [32.5, 73.5], c: 'indpak', from: 'in' },
+    { re: /lancha|narcolancha|caribe|caracas/i, ll: [12.0, -66.5], c: 'venezuela', from: 'vecar' }
+  ];
+  const strikeRe = /ataque|atac[óa]|bombarde|misil|misiles|\bdron(es)?\b|explosi[óo]n|explosiones|impact[óo]|cohete|ofensiva a[ée]rea|airstrike|missile|drone strike|shelling|rocket|strike on|struck/i;
+  const strikeFeed = 'https://api.gdeltproject.org/api/v2/geo/geo?query=(airstrike%20OR%20%22missile%20strike%22%20OR%20%22drone%20strike%22%20OR%20shelling%20OR%20bombardment)&mode=PointData&format=GeoJSON&timespan=24h&maxpoints=250';
+  const hurricaneFeed = 'https://www.nhc.noaa.gov/CurrentStorms.json';
+
   const argFeeds = ['arg_stocks', 'arg_cedears', 'arg_bonds', 'arg_notes'].map((k) => ({ key: k, url: 'https://data912.com/live/' + k }));
   const iolUrl = (sym) => 'https://iol.invertironline.com/titulo/cotizacion/BCBA/' + encodeURIComponent(sym);
 
-  return { entities, upRe, downRe, offTopicRe, weakKeywords, disasterCtx, factors, conflictShock, instruments, lecapSens, factorWords, disasterTypes, disasterWords, disasterShock, regionOf, disasterFeeds, disasterNewsFeed, radioServers, radios, channels, argFeeds, iolUrl };
+  return { launch, cities, strikeRe, strikeFeed, hurricaneFeed, entities, upRe, downRe, offTopicRe, weakKeywords, disasterCtx, factors, conflictShock, instruments, lecapSens, factorWords, disasterTypes, disasterWords, disasterShock, regionOf, disasterFeeds, disasterNewsFeed, radioServers, radios, channels, argFeeds, iolUrl };
 })();

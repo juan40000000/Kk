@@ -20,6 +20,8 @@
     arg: {},             // IOL/BYMA (data912): símbolo -> {price, chg, vol}
     lecaps: [],          // instrumentos LECAP/BONCAP detectados en vivo
     news: [],
+    pool: [],            // titulares candidatos (los que se muestran salen de acá)
+    strikes: [], gdelt: [], storms: [],
     disasters: [],
     clips: [],
     radios: [],
@@ -209,7 +211,9 @@
     item.factors = offTopic ? [] : M.factorWords.filter((w) => w.re.test(all)).map((w) => w.f);
     item.market = !offTopic && D.marketWords.some((w) => w.re.test(title));
     item.relevant = !offTopic && (item.conf.length > 0 || !!item.dis || warTitle);
+    item.loose = !offTopic && (item.relevant || warAll || item.factors.length > 0 || item.market);
     item.iol = relatedInstruments(item);
+    if (item.key && typeof AI !== 'undefined' && AI.cache[item.key]) applyAI(item);
     return item;
   }
 
@@ -315,15 +319,23 @@
       if (n.t > Date.now() + 3600e3) n.t = Date.now();
       merged.push(analyze(n));
     });
-    const fresh = merged.filter((n) => n.relevant).sort((a, b) => b.t - a.t).slice(0, 240);
+    S.pool = merged.filter((n) => n.loose).sort((a, b) => b.t - a.t).slice(0, 320);
+    S.online = true; S.lastNewsAt = Date.now();
+    publishNews(true);
+    afterData();
+    aiProcess();
+  }
+
+  // lo que se muestra: los candidatos relevantes (según la IA si clasificó el titular, si no según las reglas)
+  function publishNews(announce) {
+    const fresh = S.pool.filter((n) => n.relevant).slice(0, 240);
     const firstLoad = S.seenNews.size === 0;
     let newOnes = 0;
     fresh.forEach((n) => { if (!S.seenNews.has(n.key)) { if (!firstLoad) { n.isNew = true; newOnes++; } S.seenNews.add(n.key); } });
-    S.news = fresh; S.online = true; S.lastNewsAt = Date.now();
+    S.news = fresh;
     if (newOnes && S.view !== 'news') S.unseen += newOnes;
-    if (newOnes && !firstLoad) toast(`${newOnes} noticia${newOnes > 1 ? 's' : ''} nueva${newOnes > 1 ? 's' : ''}`);
-    store('news', S.news.slice(0, 150).map(({ isNew, iol, ...n }) => n));
-    afterData();
+    if (announce && newOnes && !firstLoad) toast(`${newOnes} noticia${newOnes > 1 ? 's' : ''} nueva${newOnes > 1 ? 's' : ''}`);
+    store('news', S.pool.slice(0, 200).map(({ isNew, iol, ai, ...n }) => n));
   }
 
   /* ================= desastres naturales ================= */
@@ -345,8 +357,10 @@
           const level = (xmlText(el, 'gdacs:alertlevel') || '').toLowerCase();
           const lat = parseFloat(xmlText(el, 'geo:lat')), lon = parseFloat(xmlText(el, 'geo:long'));
           const t = Date.parse(xmlText(el, 'gdacs:todate') || xmlText(el, 'pubDate')) || Date.now();
+          const sv = el.getElementsByTagName('gdacs:severity')[0];
+          const wind = sv && /km/i.test(sv.getAttribute('unit') || '') ? parseFloat(sv.getAttribute('value')) : null;
           return { id: 'gdacs-' + (xmlText(el, 'gdacs:eventid') || xmlText(el, 'guid')), type, title: xmlText(el, 'title'), place: xmlText(el, 'gdacs:country'),
-            lat, lon, sev: level === 'red' ? 1 : level === 'orange' ? 0.7 : 0.35, level, t, link: xmlText(el, 'link'), src: 'GDACS' };
+            lat, lon, sev: level === 'red' ? 1 : level === 'orange' ? 0.7 : 0.35, level, t, link: xmlText(el, 'link'), src: 'GDACS', wind: wind && isFinite(wind) ? wind : null };
         }).filter((d) => M.disasterTypes[d.type] && isFinite(d.lat) && isFinite(d.lon) && Date.now() - d.t < 10 * 864e5);
       }
       const j = JSON.parse(txt);
@@ -516,8 +530,8 @@
   }
 
   function afterData() {
-    computeHeat(); computeProjection(); computeRisk();
-    S.news.forEach((n) => { n.iol = relatedInstruments(n); });
+    computeHeat(); computeProjection(); computeRisk(); buildStrikes();
+    S.news.forEach((n) => { if (n.ai) applyAI(n); else n.iol = relatedInstruments(n); });
     S.clips.forEach((c) => { c.score = clipScore(c); });
     ConnGraph.rebuild(); ProjGraph.rebuild();
     renderAll();
@@ -541,7 +555,7 @@
     const now = Date.now();
     S.disasters = [
       { id: 'demo1', type: 'EQ', title: 'Sismo M6.4 · costa de Japón (ejemplo)', place: 'Japón', lat: 36.2, lon: 141.5, sev: 0.65, mag: 6.4, t: now - 3 * 3600e3, link: 'https://earthquake.usgs.gov', src: 'Ejemplo' },
-      { id: 'demo2', type: 'TC', title: 'Huracán en el Golfo de México (ejemplo)', place: 'EE.UU.', lat: 25.5, lon: -90, sev: 0.9, t: now - 5 * 3600e3, link: 'https://www.gdacs.org', src: 'Ejemplo' },
+      { id: 'demo2', type: 'TC', title: 'Huracán en el Golfo de México (ejemplo)', place: 'EE.UU.', lat: 24.5, lon: -87.5, sev: 0.9, t: now - 5 * 3600e3, link: 'https://www.gdacs.org', src: 'Ejemplo' },
       { id: 'demo3', type: 'VO', title: 'Erupción volcánica en Indonesia (ejemplo)', place: 'Indonesia', lat: -7.5, lon: 110.4, sev: 0.5, t: now - 20 * 3600e3, link: 'https://www.gdacs.org', src: 'Ejemplo' },
       { id: 'demo4', type: 'DR', title: 'Sequía en la región pampeana (ejemplo)', place: 'Argentina', lat: -35, lon: -62, sev: 0.55, t: now - 30 * 3600e3, link: 'https://www.gdacs.org', src: 'Ejemplo' },
       { id: 'demo5', type: 'WF', title: 'Incendios forestales en California (ejemplo)', place: 'EE.UU.', lat: 38.5, lon: -121.5, sev: 0.35, t: now - 8 * 3600e3, link: 'https://eonet.gsfc.nasa.gov', src: 'Ejemplo' }
@@ -549,6 +563,11 @@
     const demo = [
       ['Ataques con drones contra la red eléctrica de Ucrania elevan el precio del gas en Europa', 12],
       ['El petróleo Brent sube por temor a interrupciones en el estrecho de Ormuz', 25],
+      ['Rusia lanza un ataque masivo con misiles contra Kiev y Járkov', 18],
+      ['Israel bombardea el sur de Gaza y Rafah', 28],
+      ['Hutíes atacan un buque mercante en el Mar Rojo', 45],
+      ['Ataque con drones ucranianos en Bélgorod', 60],
+      ['Irán lanza misiles contra Tel Aviv', 75],
       ['Huracán avanza sobre el Golfo de México: cierran plataformas petroleras', 33],
       ['Navieras vuelven a desviar buques por ataques en el Mar Rojo; suben los fletes', 40],
       ['El oro marca nuevos máximos ante la escalada en Medio Oriente', 55],
@@ -561,7 +580,9 @@
       ['Rheinmetall y las acciones de defensa europeas suben tras nuevo paquete de ayuda militar', 240],
       ['Junta de Malí y grupos yihadistas: el uranio de Níger vuelve al foco', 320]
     ];
-    S.news = demo.map(([title, m], i) => analyze({ title, link: 'https://news.google.com', source: 'Ejemplo (sin conexión)', t: now - m * 60000, desc: 'Titular de demostración: la app muestra noticias reales cuando tiene conexión desde el teléfono.', key: 'demo' + i }));
+    S.pool = demo.map(([title, m], i) => analyze({ title, link: 'https://news.google.com', source: 'Ejemplo (sin conexión)', t: now - m * 60000, desc: 'Titular de demostración: la app muestra noticias reales cuando tiene conexión desde el teléfono.', key: 'demo' + i }));
+    publishNews(false);
+    S.storms = [{ id: 'demo-storm', name: 'Ejemplo', cls: 'HU', kt: 120, kmh: 222, cat: 4, lat: 24.5, lon: -87.5, dir: 330, mph: 10, pressure: '944', t: now, link: 'https://www.nhc.noaa.gov/', src: 'Ejemplo' }];
     S.clips = [
       ['Así fue el ataque con drones sobre Kiev', 'DW Español', 50], ['Ormuz: por qué el petróleo puede dispararse', 'France 24 Español', 120],
       ['Huracán en el Golfo: imágenes satelitales', 'CNN en Español', 200], ['Taiwán y la guerra de los chips, explicado', 'BBC Mundo', 400]
@@ -725,6 +746,7 @@
     return `<article class="news ${n.isNew ? 'fresh' : ''}" data-news="${esc(n.key)}">
       <div class="meta">${n.isNew ? '<span class="new-pill">NUEVO</span>' : ''}<span class="src">${esc(n.source)}</span>·<span>${ago(n.t)}</span></div>
       <h3>${esc(n.title)}</h3>
+      ${n.aiSummary ? `<p class="ai-line"><span class="ai-pill">IA</span>${esc(n.aiSummary)}</p>` : ''}
       ${tags.length ? `<div class="tags">${tags.join('')}</div>` : ''}
       ${n.iol && n.iol.length ? `<div class="iol-line"><span class="iol-lbl">IOL</span>${n.iol.map(iolChip).join('')}</div>` : ''}
       ${clip ? `<div class="news-clip" data-clip="${esc(clip.vid)}"><span class="nc-thumb" ${clip.thumb ? `style="background-image:url('${esc(clip.thumb)}')"` : ''}>▶</span><span><b>${esc(clip.channel)}</b> ${esc(clip.title.slice(0, 70))}</span></div>` : ''}
@@ -769,32 +791,65 @@
   }
 
   /* ================= vista en vivo: radios + clips ================= */
-  const player = { audio: new Audio(), st: null };
-  player.audio.preload = 'none';
-  player.audio.addEventListener('playing', () => { $('#player').classList.add('playing'); renderLive(); });
-  player.audio.addEventListener('pause', () => { $('#player').classList.remove('playing'); renderLive(); });
-  player.audio.addEventListener('waiting', () => { $('#plState').textContent = 'Conectando…'; });
-  player.audio.addEventListener('playing', () => { $('#plState').textContent = 'En vivo'; });
-  player.audio.addEventListener('error', () => { $('#plState').textContent = 'No se pudo reproducir'; toast('Esa radio no responde, probá otra'); });
+  // En el teléfono la radio la reproduce RadioService (sigue sonando en segundo plano, con controles
+  // en la notificación y la pantalla de bloqueo); en el navegador se usa un <audio> como respaldo.
+  const NATIVE_RADIO = NATIVE && typeof window.Native.radioPlay === 'function';
+  const player = { audio: NATIVE_RADIO ? null : new Audio(), st: null, state: 'stopped' };
+  const RADIO_TXT = { buffering: 'Conectando…', playing: 'En vivo', paused: 'En pausa', error: 'No se pudo reproducir', stopped: '' };
+  function setRadioState(state) {
+    player.state = state;
+    const on = state === 'playing' || state === 'buffering';
+    $('#player').classList.toggle('playing', on);
+    $('#plState').textContent = RADIO_TXT[state] || '';
+    if (state === 'error') toast('Esa radio no responde, probá otra');
+    if (state === 'stopped' || (state === 'error' && NATIVE_RADIO)) {
+      player.st = null; $('#player').classList.remove('show'); document.body.classList.remove('has-player');
+    }
+    renderLive();
+  }
+  window.onRadioState = function (state, name) {
+    if (name && !player.st) player.st = S.radios.find((r) => r.name === name) || { name };
+    if (player.st && state !== 'stopped') showPlayerBar(player.st);
+    setRadioState(state);
+  };
+  if (player.audio) {
+    player.audio.preload = 'none';
+    player.audio.addEventListener('playing', () => setRadioState('playing'));
+    player.audio.addEventListener('pause', () => { if (player.st) setRadioState('paused'); });
+    player.audio.addEventListener('waiting', () => setRadioState('buffering'));
+    player.audio.addEventListener('error', () => { if (player.st) setRadioState('error'); });
+  }
+  function showPlayerBar(st) {
+    $('#plName').textContent = st.name;
+    $('#plLogo').style.backgroundImage = st.logo ? `url('${String(st.logo).replace(/['\\]/g, '')}')` : '';
+    $('#player').classList.add('show');
+    document.body.classList.add('has-player');
+  }
 
   function playRadio(i) {
     const st = S.radios[i]; if (!st) return;
     if (!st.url) { toast('Disponible con conexión desde el teléfono'); return; }
-    if (player.st === st && !player.audio.paused) { player.audio.pause(); return; }
+    const playing = player.state === 'playing' || player.state === 'buffering';
+    if (player.st && player.st.name === st.name && playing) { toggleRadio(); return; }
     player.st = st;
-    player.audio.src = st.url;
-    player.audio.play().catch(() => toast('No se pudo reproducir'));
-    $('#plName').textContent = st.name;
-    $('#plLogo').style.backgroundImage = st.logo ? `url('${st.logo.replace(/'/g, '')}')` : '';
-    $('#plState').textContent = 'Conectando…';
-    $('#player').classList.add('show');
-    document.body.classList.add('has-player');
-    if (window.Native && window.Native.keepAwake) window.Native.keepAwake(true);
+    showPlayerBar(st);
+    setRadioState('buffering');
+    if (NATIVE_RADIO) window.Native.radioPlay(st.url, st.name, st.logo || '');
+    else { player.audio.src = st.url; player.audio.play().catch(() => setRadioState('error')); }
+  }
+  function toggleRadio() {
+    if (NATIVE_RADIO) { window.Native.radioToggle(); return; }
+    if (player.audio.paused) player.audio.play().catch(() => {}); else player.audio.pause();
   }
   function stopRadio() {
-    player.audio.pause(); player.audio.removeAttribute('src'); player.st = null;
-    $('#player').classList.remove('show'); document.body.classList.remove('has-player');
-    renderLive();
+    if (NATIVE_RADIO) window.Native.radioStop();
+    else { player.audio.pause(); player.audio.removeAttribute('src'); }
+    setRadioState('stopped');
+  }
+  function syncRadio() {
+    if (!NATIVE_RADIO || !window.Native.radioState) return;
+    const [state, name] = String(window.Native.radioState()).split('|');
+    if (state && state !== 'stopped') window.onRadioState(state, name); else if (player.st) setRadioState('stopped');
   }
 
   function renderLive() {
@@ -802,7 +857,7 @@
     const groups = [];
     S.radios.forEach((r) => { if (!groups.includes(r.group)) groups.push(r.group); });
     $('#radioList').innerHTML = S.radios.length ? groups.map((g) => `<h4 class="sec">${esc(g)}</h4><div class="radios">${S.radios.map((r, i) => r.group !== g ? '' : `
-      <button class="radio ${player.st === r && !player.audio.paused ? 'on' : ''}" data-radio="${i}">
+      <button class="radio ${player.st && player.st.name === r.name && player.state !== 'paused' ? 'on' : ''}" data-radio="${i}">
         <span class="r-logo" ${r.logo ? `style="background-image:url('${esc(r.logo)}')"` : ''}>${r.logo ? '' : '📻'}</span>
         <span class="r-name">${esc(r.name)}</span>
         <span class="r-eq"><i></i><i></i><i></i></span>
@@ -812,6 +867,357 @@
     $('#clipList').innerHTML = clips.length ? clips.map((c) => clipCard(c, true)).join('') : '<div class="empty small">Buscando clips de los últimos días…</div>';
     const ms = moments();
     $('#liveMoments').innerHTML = ms.length ? `<div class="hscroll">${ms.map(momentCard).join('')}</div>` : '';
+  }
+
+  /* ================= video ================= */
+  function playClip(vid) {
+    if (/^demo/.test(vid)) { toast('Disponible con conexión desde el teléfono'); return; }
+    const c = S.clips.find((x) => x.vid === vid);
+    if (NATIVE && window.Native.playVideo) window.Native.playVideo(vid, c ? c.title : '');
+    else openUrl('https://www.youtube.com/watch?v=' + vid);
+  }
+
+  /* ================= IA: clasificación de noticias con Claude ================= */
+  // La clave vive en el almacenamiento nativo del teléfono; acá solo se arma el pedido.
+  const AI_MODELS = {
+    'claude-opus-5-5': { label: 'Claude Opus 5.5 · más preciso', price: [4, 20], fallbacks: true },
+    'claude-haiku-5-5': { label: 'Claude Haiku 5.5 · más económico', price: [0.1, 0.5], fallbacks: false }
+  };
+  const AI = {
+    on: load('ai_on') !== false,
+    model: AI_MODELS[load('ai_model')] ? load('ai_model') : 'claude-opus-5-5',
+    cache: load('ai_cache') || {},
+    usage: load('ai_usage') || { calls: 0, inTok: 0, outTok: 0, cost: 0 },
+    noFallback: !!load('ai_nofb'),
+    busy: false, err: null, last: 0
+  };
+  const aiHasKey = () => !!(NATIVE && window.Native.aiHasKey && window.Native.aiHasKey());
+  const aiReady = () => AI.on && aiHasKey();
+
+  function applyAI(n) {
+    const a = AI.cache[n.key];
+    if (!a || a.refused) return;
+    n.ai = a;
+    n.relevant = !!a.relevant;
+    n.conf = a.conflict && a.conflict !== 'none' && conflictById[a.conflict] ? [a.conflict] : [];
+    n.dis = a.disaster && a.disaster !== 'none' && M.disasterTypes[a.disaster] ? a.disaster : null;
+    n.iol = (a.instruments || []).filter((x) => instById(x.id)).slice(0, 4)
+      .map((x) => ({ id: x.id, s: x.dir === 'down' ? -1 : 1, dir: x.dir !== 'neutral', why: x.reason }));
+    n.aiSummary = a.summary || '';
+  }
+
+  function aiSystemPrompt() {
+    const conf = D.conflicts.map((c) => `- ${c.id}: ${c.name} (${c.region})`).join('\n');
+    const ins = allInstruments().map((i) => {
+      const exp = Object.entries(i.sens).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2)
+        .map(([f, v]) => `${M.factors[f].short} ${v > 0 ? '+' : '−'}`).join(', ');
+      return `- ${i.id}: ${i.name} (${i.type}; ${exp})`;
+    }).join('\n');
+    return `Clasificás titulares para una app que cruza guerras y desastres naturales con los mercados. La usa un inversor argentino que opera en IOL (BYMA).
+
+Para cada titular numerado devolvé un objeto con:
+- i: el número del titular.
+- relevant: true solo si trata de un conflicto armado o tensión militar, un desastre natural, o un hecho geopolítico con efecto plausible en los mercados. Deportes (aunque nombren clubes como Huracán, Defensa y Justicia o Ciclón), espectáculos, salud, consumo o farándula: false.
+- conflict: el id del conflicto del listado del que trata el titular, o "none".
+- disaster: tipo de desastre natural real (EQ sismo, TC ciclón/huracán, FL inundación, VO volcán, WF incendio forestal, DR sequía, ST tormenta severa), o "none". Nunca por metáforas ni nombres propios.
+- instruments: hasta 4 instrumentos del listado con un vínculo directo que un analista defendería (empresa nombrada, materia prima o sector afectado de forma explícita o casi inmediata). dir "up" si el hecho la favorece, "down" si la perjudica, "neutral" si el vínculo es claro pero la dirección no. reason: 2 a 4 palabras en español (por ejemplo "petróleo al alza", "más gasto militar"). Si no hay un vínculo claro, dejá la lista vacía: es mejor no vincular que forzar.
+- summary: una frase en español de hasta 140 caracteres sobre por qué importa para los mercados; vacía si relevant es false.
+
+No inventes hechos que no estén en el titular.
+
+Conflictos:
+${conf}
+
+Instrumentos (ticker: nombre, tipo, exposiciones principales):
+${ins}`;
+  }
+
+  function aiSchema() {
+    return {
+      type: 'object', additionalProperties: false, required: ['items'],
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object', additionalProperties: false,
+            required: ['i', 'relevant', 'conflict', 'disaster', 'instruments', 'summary'],
+            properties: {
+              i: { type: 'integer' },
+              relevant: { type: 'boolean' },
+              conflict: { type: 'string', enum: D.conflicts.map((c) => c.id).concat(['none']) },
+              disaster: { type: 'string', enum: Object.keys(M.disasterTypes).concat(['none']) },
+              instruments: {
+                type: 'array',
+                items: {
+                  type: 'object', additionalProperties: false, required: ['id', 'dir', 'reason'],
+                  properties: {
+                    id: { type: 'string', enum: allInstruments().map((x) => x.id) },
+                    dir: { type: 'string', enum: ['up', 'down', 'neutral'] },
+                    reason: { type: 'string' }
+                  }
+                }
+              },
+              summary: { type: 'string' }
+            }
+          }
+        }
+      }
+    };
+  }
+
+  function aiCall(body, beta) {
+    return new Promise((res, rej) => {
+      const id = 'a' + (++reqSeq); pending[id] = { res, rej };
+      setTimeout(() => { if (pending[id]) { delete pending[id]; rej(new Error('timeout')); } }, 150000);
+      window.Native.aiRequest(id, JSON.stringify(body), beta || '');
+    }).then((t) => JSON.parse(t));
+  }
+
+  async function aiClassify(batch) {
+    const model = AI.model;
+    const body = {
+      model, max_tokens: 16000,
+      system: aiSystemPrompt(),
+      messages: [{ role: 'user', content: batch.map((n, i) => `${i}. [${n.source}] ${n.title}${n.desc ? ' — ' + n.desc.slice(0, 220) : ''}`).join('\n') }],
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: aiSchema() } }
+    };
+    let beta = '';
+    if (AI_MODELS[model].fallbacks && !AI.noFallback) { body.fallbacks = 'default'; beta = 'server-side-fallback-2026-07-01'; }
+    let r = await aiCall(body, beta);
+    if (r.status === 400 && beta && /fallback/i.test(r.body)) {
+      AI.noFallback = true; store('ai_nofb', true);
+      delete body.fallbacks; r = await aiCall(body, '');
+    }
+    if (r.status === 401 || r.status === 403) throw Object.assign(new Error('Clave inválida o sin permisos'), { fatal: true });
+    if (r.status !== 200) throw new Error('API ' + r.status);
+    const msg = JSON.parse(r.body);
+    const u = msg.usage || {};
+    AI.usage.calls++; AI.usage.inTok += u.input_tokens || 0; AI.usage.outTok += u.output_tokens || 0;
+    const pr = AI_MODELS[model].price;
+    AI.usage.cost += ((u.input_tokens || 0) * pr[0] + (u.output_tokens || 0) * pr[1]) / 1e6;
+    store('ai_usage', AI.usage);
+    if (msg.stop_reason === 'refusal') { batch.forEach((n) => { AI.cache[n.key] = { refused: true, t: Date.now() }; }); return; }
+    if (msg.stop_reason === 'max_tokens') throw new Error('respuesta incompleta');
+    const text = (msg.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    const data = JSON.parse(text);
+    (data.items || []).forEach((it) => {
+      const n = batch[it.i]; if (!n) return;
+      AI.cache[n.key] = { relevant: it.relevant, conflict: it.conflict, disaster: it.disaster, instruments: it.instruments, summary: it.summary, t: Date.now() };
+    });
+  }
+
+  async function aiProcess() {
+    if (!aiReady() || AI.busy) return;
+    const todo = S.pool.filter((n) => !AI.cache[n.key]).sort((a, b) => b.t - a.t).slice(0, 50);
+    if (!todo.length) return;
+    AI.busy = true; AI.err = null;
+    try {
+      for (let i = 0; i < todo.length; i += 25) await aiClassify(todo.slice(i, i + 25));
+      AI.last = Date.now();
+    } catch (e) {
+      AI.err = e.message;
+      if (e.fatal) toast('IA: ' + e.message);
+    } finally {
+      AI.busy = false;
+      // podar la caché: quedan las 800 clasificaciones más recientes
+      const keys = Object.keys(AI.cache);
+      if (keys.length > 800) keys.sort((a, b) => AI.cache[a].t - AI.cache[b].t).slice(0, keys.length - 800).forEach((k) => delete AI.cache[k]);
+      store('ai_cache', AI.cache);
+      S.pool.forEach(applyAI);
+      publishNews();
+      afterData();
+    }
+  }
+
+  function showSettings() {
+    const has = aiHasKey();
+    const u = AI.usage;
+    const classified = Object.keys(AI.cache).length;
+    openSheet(`
+      <div class="kicker">Ajustes</div><h2>Inteligencia artificial</h2>
+      <p>Con una clave de la API de Claude, cada titular nuevo se clasifica con IA: si es relevante, de qué conflicto o desastre trata, qué instrumentos de IOL afecta, en qué dirección y por qué. Sin clave, la app usa reglas de palabras clave.</p>
+      ${NATIVE ? `
+      <div class="set-row"><span>Estado</span><b class="${has ? 'up' : 'down'}-t">${has ? (AI.on ? 'Activa' : 'Pausada') : 'Sin clave'}</b></div>
+      <label class="set-lbl">Clave de API (se guarda solo en este teléfono)</label>
+      <input id="aiKey" class="set-input" type="password" autocomplete="off" placeholder="${has ? '•••••••• guardada' : 'sk-ant-…'}">
+      <div class="row-btns"><button class="btn" id="aiSave">Guardar clave</button>${has ? '<button class="btn ghost" id="aiDel">Borrar</button>' : ''}<button class="btn ghost" id="aiToggle">${AI.on ? 'Pausar IA' : 'Activar IA'}</button></div>
+      <label class="set-lbl">Modelo</label>
+      <div class="seg wide" id="aiModelSeg">${Object.entries(AI_MODELS).map(([id, m]) => `<button class="${AI.model === id ? 'on' : ''}" data-aimodel="${id}">${esc(m.label)}</button>`).join('')}</div>
+      <div class="stats">
+        <div class="stat"><b>${classified}</b><span>titulares clasificados</span></div>
+        <div class="stat"><b>${u.calls}</b><span>llamadas</span></div>
+        <div class="stat"><b>US$ ${nf(2).format(u.cost)}</b><span>costo estimado</span></div>
+      </div>
+      ${AI.err ? `<p class="warn">Último error: ${esc(AI.err)}</p>` : ''}
+      ${AI.busy ? '<p class="muted">Clasificando…</p>' : ''}
+      <div class="row-btns"><button class="btn ghost" id="aiRun">Clasificar pendientes</button><button class="btn ghost" id="aiReset">Reclasificar todo</button></div>
+      <p class="fine left">Solo se envían titulares y bajadas públicas. Cada titular se clasifica una vez y queda guardado. La clave se crea en console.anthropic.com.</p>`
+      : '<p class="warn">Disponible en la app instalada en el teléfono.</p>'}`);
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+    on('aiSave', () => {
+      const v = $('#aiKey').value.trim();
+      if (!/^sk-ant-/.test(v)) { toast('La clave debería empezar con sk-ant-'); return; }
+      window.Native.aiSetKey(v); AI.err = null; toast('Clave guardada'); showSettings(); aiProcess();
+    });
+    on('aiDel', () => { window.Native.aiSetKey(''); toast('Clave borrada'); showSettings(); });
+    on('aiToggle', () => { AI.on = !AI.on; store('ai_on', AI.on); showSettings(); if (AI.on) aiProcess(); });
+    on('aiRun', () => { aiProcess(); toast('Clasificando titulares pendientes…'); setTimeout(showSettings, 400); });
+    on('aiReset', () => { AI.cache = {}; store('ai_cache', {}); S.pool.forEach((n) => { delete n.ai; analyze(n); }); aiProcess(); toast('Reclasificando…'); setTimeout(showSettings, 400); });
+    $$('#aiModelSeg button').forEach((b) => b.addEventListener('click', () => { AI.model = b.dataset.aimodel; store('ai_model', AI.model); showSettings(); }));
+  }
+
+  /* ================= ¿ya se movió? precio antes vs. después de la noticia ================= */
+  const seriesCache = {};
+  function yahooFor(id) {
+    if (assetById[id]) return id;
+    const ins = instById(id); if (!ins) return null;
+    if (ins.type === 'Acciones') return id + '.BA';
+    if (ins.type === 'CEDEARs' || ins.type === 'ETFs') return id === 'BRKB' ? 'BRK-B' : id;
+    return null; // bonos y letras: sin serie intradiaria pública
+  }
+  async function fetchSeries(sym) {
+    const c = seriesCache[sym];
+    if (c && Date.now() - c.at < 4 * 60e3) return c;
+    const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=5m`);
+    const r = j.chart && j.chart.result && j.chart.result[0];
+    if (!r || !r.timestamp) throw new Error('sin serie');
+    const cl = r.indicators.quote[0].close; const ts = []; const px = [];
+    r.timestamp.forEach((t, i) => { if (cl[i] != null) { ts.push(t * 1000); px.push(cl[i]); } });
+    return (seriesCache[sym] = { ts, px, at: Date.now() });
+  }
+  async function reaction(id, t) {
+    const sym = yahooFor(id); if (!sym) return { id, na: 'sin precio intradiario' };
+    let ser;
+    if (S.demo) {
+      const q = S.quotes[id] || S.arg[id];
+      return { id, sym, move: q ? (q.chg || 0) * 0.6 : 0, closed: false };
+    }
+    try { ser = await fetchSeries(sym); } catch (e) { return { id, sym, na: 'sin datos' }; }
+    if (ser.ts.length < 2) return { id, sym, na: 'sin datos' };
+    let i0 = -1;
+    for (let i = 0; i < ser.ts.length; i++) { if (ser.ts[i] <= t) i0 = i; else break; }
+    const early = i0 < 0; if (early) i0 = 0;
+    const last = ser.px.length - 1;
+    if (i0 >= last) return { id, sym, closed: true };
+    return { id, sym, move: ((ser.px[last] - ser.px[i0]) / ser.px[i0]) * 100, early, since: ser.ts[i0] };
+  }
+  function verdict(r, dir) {
+    if (r.na) return `<span class="muted">${esc(r.na)}</span>`;
+    if (r.closed) return '<span class="muted">sin operaciones desde la noticia (mercado cerrado)</span>';
+    const m = r.move; const th = 0.4;
+    const mv = `<b class="${chgClass(m)}-t">${fmtChg(m)}</b>`;
+    if (!dir) return `${mv} desde la noticia`;
+    if (Math.abs(m) < th) return `${mv} · <span class="v-wait">todavía no se movió</span>`;
+    if (Math.sign(m) === Math.sign(dir)) return `${mv} · <span class="v-done">ya lo reflejó</span>`;
+    return `${mv} · <span class="v-against">se movió al revés</span>`;
+  }
+  async function fillReaction(n) {
+    const box = document.getElementById('reactBox'); if (!box) return;
+    const list = (n.iol || []).map((x) => ({ id: x.id, dir: x.dir ? Math.sign(x.s) : 0 }))
+      .concat((n.assets || []).slice(0, 2).map((id) => ({ id, dir: 0 })));
+    if (!list.length) { box.innerHTML = '<p class="muted">Esta noticia no tiene activos vinculados.</p>'; return; }
+    const res = await Promise.all(list.map((x) => reaction(x.id, n.t)));
+    if (!document.getElementById('reactBox')) return;
+    box.innerHTML = res.map((r, i) => {
+      const name = instById(r.id) ? r.id : assetById[r.id].name;
+      const under = r.sym && r.sym !== r.id && !r.sym.endsWith('.BA') ? ` <small class="muted">(${esc(r.sym)} en NY)</small>` : '';
+      return `<div class="react"><span class="r-id">${esc(name)}${under}</span><span>${verdict(r, list[i].dir)}</span></div>`;
+    }).join('') + `<p class="fine left">Compara el precio al momento de la noticia (${new Date(n.t).toLocaleString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}) con el último disponible, en barras de 5 minutos. Los CEDEAR se miden con su acción en Nueva York.</p>`;
+  }
+
+  /* ================= ataques (GDELT + ciudades citadas en noticias) ================= */
+  const R2D = 180 / Math.PI;
+  function gcDist(a, b) { return d3.geoDistance([a[1], a[0]], [b[1], b[0]]); }
+  function pickFrom(key, text, seed) {
+    let k = key;
+    if (key === 'auto-il') k = /ir[áa]n|teher/i.test(text) ? 'ir' : /hut[íi]|houthi|yemen/i.test(text) ? 'ye' : /hezbol|l[íi]bano|lebanon/i.test(text) ? 'lb' : 'gz';
+    if (key === 'auto-ye') k = /israel/i.test(text) ? 'il' : 'us';
+    const opts = M.launch[k]; if (!opts) return null;
+    return opts[Math.abs(seed) % opts.length];
+  }
+  function strikeOrigin(conf, ll, text, seed) {
+    const city = M.cities.find((c) => c.re.test(text));
+    if (city) return pickFrom(city.from, text, seed);
+    const [lat, lon] = ll;
+    const def = { ukr: lon > 36.6 || lat > 51.6 ? 'ua' : 'ru', mideast: lat > 29.5 && lat < 33.3 && lon > 34.56 && lon < 35.7 ? 'auto-il' : 'il', iran: 'il',
+      redsea: lat < 17.5 && lon > 42.6 ? 'auto-ye' : 'ye', sudan: 'sd', drc: 'cd', myanmar: 'mm', indpak: lon < 74.3 ? 'in' : 'pk', venezuela: 'vecar' }[conf];
+    if (def) return pickFrom(def, text, seed);
+    return [lat + 2.5, lon - 3];
+  }
+  let strikeSeq = 0;
+  function buildStrikes() {
+    const out = [];
+    const add = (s) => {
+      if (out.some((o) => Math.abs(o.lat - s.lat) < 0.35 && Math.abs(o.lon - s.lon) < 0.35)) return;
+      s.from = s.from || strikeOrigin(s.conf, [s.lat, s.lon], s.text, out.length);
+      s.dist = gcDist([s.lat, s.lon], s.from);
+      s.phase = ((strikeSeq++) * 0.37) % 1;
+      out.push(s);
+    };
+    // 1) noticias de las últimas 12 h que nombran una ciudad y hablan de un ataque
+    S.news.filter((n) => Date.now() - n.t < 12 * 3600e3 && M.strikeRe.test(n.title)).forEach((n) => {
+      const city = M.cities.find((c) => c.re.test(n.title)); if (!city) return;
+      const j = (k) => ((n.key.charCodeAt(k % n.key.length) % 20) - 10) / 60;
+      add({ id: 's-' + n.key.slice(0, 20), lat: city.ll[0] + j(3), lon: city.ll[1] + j(7), conf: city.c, text: n.title, label: n.title, newsKey: n.key, link: n.link, src: n.source, t: n.t, count: 1 });
+    });
+    // 2) GDELT: lugares geolocalizados en notas de ataques de las últimas 24 h
+    S.gdelt.forEach((g) => add(Object.assign({}, g)));
+    const prev = Object.fromEntries(S.strikes.map((x) => [x.id, x.phase]));
+    out.forEach((x) => { if (prev[x.id] != null) x.phase = prev[x.id]; });
+    S.strikes = out.slice(0, 45);
+  }
+  async function refreshStrikes() {
+    if (S.demo) return;
+    const out = [];
+    const add = (x) => out.push(x);
+    {
+      try {
+        const g = await getJSON(M.strikeFeed);
+        (g.features || []).filter((f) => (f.properties.count || 0) >= 2).sort((a, b) => b.properties.count - a.properties.count).slice(0, 120).forEach((f) => {
+          const [lon, lat] = f.geometry.coordinates;
+          let best = null, bd = 9;
+          D.conflicts.forEach((c) => { const d = gcDist([lat, lon], [c.lat, c.lon]) * 6371; if (d < 1100 && d < bd * 1000) { bd = d / 1000; best = c; } });
+          if (!best) return;
+          const html = f.properties.html || '';
+          const m = /href="([^"]+)"[^>]*>([^<]+)</.exec(html);
+          add({ id: 'g-' + lat.toFixed(2) + lon.toFixed(2), lat, lon, conf: best.id, text: f.properties.name + ' ' + (m ? m[2] : ''), label: f.properties.name,
+            link: m ? m[1] : '', src: 'GDELT', title: m ? cleanText(m[2]) : '', t: Date.now(), count: f.properties.count });
+        });
+      } catch (e) { /* GDELT opcional: quedan las de noticias */ }
+    }
+    if (out.length) S.gdelt = out.slice(0, 40);
+    buildStrikes();
+  }
+
+  /* ================= huracanes activos (NHC) ================= */
+  function destination(lat, lon, bearingDeg, km) {
+    const d = km / 6371, b = bearingDeg / R2D, p1 = lat / R2D, l1 = lon / R2D;
+    const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+    const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+    return [p2 * R2D, l2 * R2D];
+  }
+  const catFromKt = (kt) => (kt >= 137 ? 5 : kt >= 113 ? 4 : kt >= 96 ? 3 : kt >= 83 ? 2 : kt >= 64 ? 1 : 0);
+  async function refreshStorms() {
+    if (S.demo) return;
+    try {
+      const j = await getJSON(M.hurricaneFeed);
+      S.storms = (j.activeStorms || []).map((st) => {
+        const kt = parseFloat(st.intensity) || 0;
+        return { id: 'nhc-' + st.id, name: st.name, cls: st.classification, kt, kmh: Math.round(kt * 1.852), cat: catFromKt(kt),
+          lat: +st.latitudeNumeric, lon: +st.longitudeNumeric, dir: +st.movementDir, mph: +st.movementSpeed, pressure: st.pressure,
+          t: Date.parse(st.lastUpdate) || Date.now(), link: 'https://www.nhc.noaa.gov/', src: 'NHC' };
+      }).filter((st) => isFinite(st.lat) && isFinite(st.lon));
+    } catch (e) { /* sin ciclones activos o NHC no disponible */ }
+  }
+  // ciclones a dibujar: NHC + los TC de GDACS/EONET que no estén ya en NHC
+  function cyclones() {
+    const list = (S.storms || []).slice();
+    S.disasters.filter((d) => d.type === 'TC').forEach((d) => {
+      if (list.some((x) => Math.abs(x.lat - d.lat) < 3 && Math.abs(x.lon - d.lon) < 3)) return;
+      const kmh = d.wind || (d.sev >= 1 ? 180 : d.sev >= 0.7 ? 140 : 100);
+      list.push({ id: d.id, dis: true, name: (d.title.match(/(?:cyclone|hurricane|typhoon|storm)\s+([A-Z][A-Za-z-]+)/i) || [])[1] || 'Ciclón', kmh, cat: catFromKt(kmh / 1.852), lat: d.lat, lon: d.lon, t: d.t, link: d.link, src: d.src });
+    });
+    return list;
   }
 
   /* ================= hoja inferior ================= */
@@ -888,6 +1294,43 @@
       <div class="row-btns"><button class="btn" data-open="${esc(d.link)}">Fuente oficial</button><button class="btn ghost" data-go="proj" data-focus="d:${esc(d.id)}">Ver proyección</button></div>`);
   }
 
+  function showStrike(id) {
+    const st = S.strikes.find((x) => x.id === id); if (!st) return;
+    const c = conflictById[st.conf];
+    const e = S.proj && S.proj.ev.find((x) => x.id === 'c:' + st.conf);
+    const n = st.newsKey && S.news.find((x) => x.key === st.newsKey);
+    openSheet(`
+      <div class="kicker" style="color:#ff8a5c">Ataque reportado · ${esc(st.src)}</div>
+      <h2>${esc(st.label.split(',')[0])}</h2>
+      ${st.title ? `<p>${esc(st.title)}</p>` : ''}
+      <div class="stats">
+        <div class="stat"><b>${c ? esc(c.short) : '—'}</b><span>conflicto</span></div>
+        <div class="stat"><b>${st.count > 1 ? st.count : 1}</b><span>${st.src === 'GDELT' ? 'menciones 24 h' : 'nota'}</span></div>
+        <div class="stat"><b>${ago(st.t)}</b><span>reportado</span></div>
+      </div>
+      <p class="fine left">Ubicación tomada de las notas (${st.src === 'GDELT' ? 'geolocalización de GDELT' : 'ciudad citada en el titular'}). La trayectoria del misil es ilustrativa: el origen es estimado según el conflicto.</p>
+      ${n ? '<h5>Noticia</h5>' + miniNews([n]) : ''}
+      ${e ? affectedBlock(e) : ''}
+      <div class="row-btns">${st.link ? `<button class="btn" data-open="${esc(st.link)}">Ver la fuente</button>` : ''}${c ? `<button class="btn ghost" data-conf="${c.id}">Ver ${esc(c.short)}</button>` : ''}</div>`);
+  }
+
+  function showStorm(id) {
+    const c = cyclones().find((x) => x.id === id); if (!c) return;
+    const shock = M.disasterShock('TC', c.lat, c.lon);
+    const e = { id: 'storm', w: Math.min(1, 0.4 + c.cat * 0.12), shock };
+    openSheet(`
+      <div class="kicker" style="color:#7FDBFF">${c.cat ? 'Huracán categoría ' + c.cat : 'Tormenta / depresión tropical'} · ${esc(c.src)}</div>
+      <h2>${esc(c.name)}</h2>
+      <div class="stats">
+        <div class="stat"><b>${c.kmh ? c.kmh + ' km/h' : '—'}</b><span>vientos sostenidos</span></div>
+        <div class="stat"><b>${c.pressure ? esc(c.pressure) + ' hPa' : c.cat ? 'Cat ' + c.cat : '—'}</b><span>${c.pressure ? 'presión' : 'intensidad'}</span></div>
+        <div class="stat"><b>${c.mph ? Math.round(c.mph * 1.609) + ' km/h' : '—'}</b><span>${c.dir != null && isFinite(c.dir) ? 'avanza al ' + Math.round(c.dir) + '°' : 'desplazamiento'}</span></div>
+      </div>
+      ${c.mph ? '<p class="fine left">La línea punteada proyecta el rumbo y la velocidad actuales a 24, 48 y 72 h; no es el pronóstico oficial (ver la fuente).</p>' : ''}
+      ${affectedBlock(e)}
+      <div class="row-btns"><button class="btn" data-open="${esc(c.link)}">Fuente oficial</button></div>`);
+  }
+
   function showAsset(sym) {
     const a = assetById[sym]; const q = S.quotes[sym]; if (!a) return;
     const conf = D.conflicts.filter((c) => c.assets.includes(sym));
@@ -935,11 +1378,14 @@
       <div class="kicker">${esc(n.source)} · ${ago(n.t)}</div>
       <h2 style="font-size:19px;line-height:1.3">${esc(n.title)}</h2>
       ${n.desc ? `<p>${esc(n.desc)}</p>` : ''}
+      ${n.aiSummary ? `<div class="ai-sum"><span class="ai-pill">IA</span>${esc(n.aiSummary)}</div>` : ''}
+      ${(n.iol && n.iol.length) || n.assets.length ? '<h5>¿Ya se movió?</h5><div id="reactBox"><p class="muted">Calculando reacción del precio…</p></div>' : ''}
       ${n.conf.length ? '<h5>Conflicto</h5>' + n.conf.map((id) => `<button class="mini-news" data-conf="${id}">${esc(conflictById[id].name)}<small>${esc(conflictById[id].region)}</small></button>`).join('') : ''}
-      ${n.iol && n.iol.length ? '<h5>Activos relacionados en IOL</h5><p class="fine left">▲/▼ = efecto esperado por esta noticia y su motivo; sin flecha = relacionado, sin dirección clara.</p>' + n.iol.map((x) => iolRow(x.id, x)).join('') : ''}
+      ${n.iol && n.iol.length ? `<h5>Activos relacionados en IOL ${n.ai ? '<span class="ai-pill">IA</span>' : ''}</h5><p class="fine left">▲/▼ = efecto esperado por esta noticia y su motivo; sin flecha = relacionado, sin dirección clara.</p>` + n.iol.map((x) => iolRow(x.id, x)).join('') : ''}
       ${clipsFor((c) => (n.conf.length && c.conf.some((x) => n.conf.includes(x))) || (n.dis && c.dis === n.dis))}
       ${n.assets.length ? '<h5>Mercados globales</h5>' + n.assets.map(marketRow).join('') : ''}
       <div class="row-btns"><button class="btn" data-open="${esc(n.link)}">Leer la nota</button><button class="btn ghost" data-share="${esc(n.key)}">Compartir</button></div>`);
+    fillReaction(n);
   }
 
   function showRanking() {
@@ -962,7 +1408,7 @@
     let rot = [-20, -25, 0];
     let zoom = 1, flatZoom = 1, flatY = 0, vel = [0, 0];
     let lastInteract = 0, selected = null, fly = null, running = false;
-    const layers = { links: true, markets: true, disasters: true };
+    const layers = { links: true, markets: true, disasters: true, strikes: true };
     const stars = Array.from({ length: 180 }, () => [Math.random(), Math.random(), Math.random() * 1.2 + 0.2, Math.random()]);
     const proj = { globe: d3.geoOrthographic().clipAngle(90).precision(0.6), flat: d3.geoNaturalEarth1().precision(0.6) };
     let hits = [];
@@ -1099,11 +1545,22 @@
 
       // desastres naturales
       if (layers.disasters) {
+        cyclones().forEach((c) => drawCyclone(p, path, c, t, placed, overlaps));
         S.disasters.forEach((d) => {
+          if (d.type === 'TC') return;
           const ll = [d.lon, d.lat]; const xy = p(ll);
           if (!xy || !visible(xy, ll)) return;
           const T = M.disasterTypes[d.type]; const r = 2.5 + d.sev * 4.5;
           ctx.save(); ctx.translate(xy[0], xy[1]);
+          if (d.type === 'VO') {
+            for (let k = 0; k < 5; k++) {
+              const ph = ((t / 2600) + k / 5) % 1;
+              ctx.fillStyle = `rgba(150,140,135,${(1 - ph) * 0.45})`;
+              ctx.beginPath(); ctx.arc(Math.sin(ph * 5 + k) * 3, -r - ph * 22, 2 + ph * 6, 0, Math.PI * 2); ctx.fill();
+            }
+          } else if (d.type === 'WF') {
+            ctx.globalAlpha = 0.6 + 0.4 * Math.abs(Math.sin(t / 120 + d.lat));
+          }
           if (d.type === 'EQ') {
             for (let k = 0; k < 2; k++) {
               const ph = ((t / 1400) + k * 0.5 + d.lon * 0.01) % 1;
@@ -1158,6 +1615,8 @@
         });
       }
 
+      if (layers.strikes) drawStrikes(p, t);
+
       // focos de conflicto
       D.conflicts.forEach((c) => {
         const ll = [c.lon, c.lat]; const xy = p(ll);
@@ -1176,6 +1635,106 @@
         ctx.fillStyle = '#ffd5dd'; ctx.fillText(c.short, xy[0], ly);
         hits.push({ x: xy[0], y: xy[1], type: 'conf', id: c.id });
       });
+    }
+
+    // punto "elevado" sobre la superficie: en el globo se aleja del centro, en el mapa sube en pantalla
+    function lifted(p, ll, h) {
+      const xy = p(ll); if (!xy) return null;
+      if (mode === 'globe') { const [cx, cy] = p.translate(); return [cx + (xy[0] - cx) * (1 + h), cy + (xy[1] - cy) * (1 + h)]; }
+      return [xy[0], xy[1] - h * p.scale() * 2.2];
+    }
+    const pxPerDeg = (p) => p.scale() * Math.PI / 180;
+
+    function drawStrikes(p, t) {
+      const PERIOD = 6500;
+      S.strikes.forEach((s) => {
+        const to = [s.lon, s.lat]; const xyT = p(to);
+        if (!xyT || !visible(xyT, to)) return;
+        const from = s.from ? [s.from[1], s.from[0]] : null;
+        const f = (((t / PERIOD) + s.phase) % 1);
+        const k = Math.min(2.4, Math.max(1.35, (mode === 'globe' ? zoom : flatZoom) * 1.3));
+        const hmax = clamp(s.dist * 0.7, 0.025, 0.12);
+        // vuelo del misil
+        if (from && f < 0.42) {
+          const g = f / 0.42; const ip = d3.geoInterpolate(from, to);
+          for (let i = 8; i >= 0; i--) {
+            const gg = Math.max(0, g - i * 0.025); const pt = ip(gg);
+            const xy = lifted(p, pt, Math.sin(Math.PI * gg) * hmax);
+            if (!xy || (mode === 'globe' && !visible(xy, pt))) continue;
+            ctx.fillStyle = i ? `rgba(255,${150 + i * 10},80,${(1 - i / 9) * 0.55})` : '#fffbe6';
+            ctx.beginPath(); ctx.arc(xy[0], xy[1], (i ? 1.6 : 2.3) * k * (1 - i / 14), 0, Math.PI * 2); ctx.fill();
+          }
+          const head = lifted(p, ip(g), Math.sin(Math.PI * g) * hmax);
+          if (head) { ctx.shadowColor = '#ffb347'; ctx.shadowBlur = 12; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(head[0], head[1], 1.8 * k, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; }
+        }
+        const [x, y] = xyT;
+        // explosión: destello, onda expansiva y esquirlas
+        if (f >= 0.42 && f < 0.66) {
+          const e = (f - 0.42) / 0.24;
+          const R = (5 + e * 20) * k;
+          const gr = ctx.createRadialGradient(x, y, 0, x, y, R);
+          gr.addColorStop(0, `rgba(255,255,230,${1 - e * 0.7})`); gr.addColorStop(0.35, `rgba(255,170,60,${0.9 - e * 0.6})`); gr.addColorStop(1, 'rgba(255,60,30,0)');
+          ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = `rgba(255,220,180,${(1 - e) * 0.8})`; ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.arc(x, y, (7 + e * 30) * k, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = `rgba(255,190,90,${1 - e})`; ctx.lineWidth = 1.1;
+          for (let i = 0; i < 8; i++) {
+            const a = i * Math.PI / 4 + s.phase * 6; const r0 = e * 8 * k, r1 = (4 + e * 15) * k;
+            ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0); ctx.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1); ctx.stroke();
+          }
+        } else if (f >= 0.66) {
+          const e = (f - 0.66) / 0.34; // humo
+          ctx.fillStyle = `rgba(120,115,120,${(1 - e) * 0.4})`;
+          ctx.beginPath(); ctx.arc(x + e * 4, y - e * 10 * k, (4 + e * 7) * k, 0, Math.PI * 2); ctx.fill();
+        }
+        // marca del impacto
+        ctx.fillStyle = '#ff6b3d'; ctx.strokeStyle = 'rgba(7,11,20,.9)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x, y, 2.2 * k, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        hits.push({ x, y, type: 'strike', id: s.id });
+      });
+    }
+
+    function drawCyclone(p, path, c, t, placed, overlaps) {
+      const ll = [c.lon, c.lat]; const xy = p(ll);
+      if (!xy || !visible(xy, ll)) return;
+      const [x, y] = xy;
+      const R = clamp((2.2 + c.cat * 0.55) * pxPerDeg(p), 24 + c.cat * 3, 160);
+      const sgn = c.lat >= 0 ? -1 : 1; // antihorario en el hemisferio norte
+      const CAT = ['#7FDBFF', '#FFE066', '#FFB347', '#FF7849', '#FF4D6D', '#C77DFF'];
+      // trayectoria estimada (rumbo y velocidad actuales)
+      if (c.dir != null && isFinite(c.dir) && c.mph > 0) {
+        const pts = [ll]; [24, 48, 72].forEach((h) => { const d = destination(c.lat, c.lon, c.dir, c.mph * 1.609 * h); pts.push([d[1], d[0]]); });
+        ctx.setLineDash([4, 5]); ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.3;
+        ctx.beginPath(); path({ type: 'LineString', coordinates: pts }); ctx.stroke(); ctx.setLineDash([]);
+        pts.slice(1).forEach((q, i) => { const qq = p(q); if (!qq || !visible(qq, q)) return; ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.arc(qq[0], qq[1], 2.2, 0, Math.PI * 2); ctx.fill(); ctx.font = '600 9px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.fillText((i + 1) * 24 + 'h', qq[0] + 4, qq[1] - 3); });
+      }
+      ctx.save(); ctx.translate(x, y);
+      const glow = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
+      glow.addColorStop(0, 'rgba(235,242,255,.55)'); glow.addColorStop(0.5, 'rgba(210,225,250,.28)'); glow.addColorStop(1, 'rgba(200,215,245,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+      ctx.rotate(sgn * t / 1400);
+      for (let arm = 0; arm < 4; arm++) {
+        ctx.beginPath();
+        for (let i = 0; i <= 40; i++) {
+          const r = R * (0.14 + 0.86 * i / 40);
+          const a = arm * Math.PI / 2 + sgn * Math.log(r / (R * 0.14)) * 1.9;
+          const px = Math.cos(a) * r, py = Math.sin(a) * r;
+          if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+        }
+        ctx.strokeStyle = `rgba(245,248,255,${0.5 - arm * 0.04})`; ctx.lineWidth = Math.max(2, R * 0.13); ctx.lineCap = 'round'; ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = 'rgba(8,14,32,.95)'; ctx.beginPath(); ctx.arc(x, y, Math.max(2.5, R * 0.09), 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = CAT[c.cat]; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, Math.max(4, R * 0.14), 0, Math.PI * 2); ctx.stroke();
+      const label = `${c.cat ? 'Cat ' + c.cat : 'T. tropical'} · ${c.name}${c.kmh ? ' · ' + c.kmh + ' km/h' : ''}`;
+      ctx.font = '700 10.5px system-ui, sans-serif'; const w = ctx.measureText(label).width;
+      const rect = [x - w / 2 - 4, y + R * 0.55, w + 8, 15];
+      if (!overlaps(rect)) {
+        placed.push(rect);
+        ctx.fillStyle = 'rgba(7,11,20,.75)'; ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
+        ctx.fillStyle = CAT[c.cat]; ctx.textAlign = 'center'; ctx.fillText(label, x, rect[1] + 11);
+      }
+      hits.push({ x, y, type: 'storm', id: c.id });
     }
 
     function frame(t) {
@@ -1252,6 +1811,8 @@
       if (!best) { selected = null; return; }
       if (best.type === 'conf') { selected = best.id; showConflict(best.id); }
       else if (best.type === 'dis') { selected = best.id; showDisaster(best.id); }
+      else if (best.type === 'strike') { showStrike(best.id); }
+      else if (best.type === 'storm') { selected = best.id; showStorm(best.id); }
       else {
         const h = best.hub;
         openSheet(`<div class="kicker">Plaza financiera</div><h2>${esc(h.city)}</h2>
@@ -1548,7 +2109,8 @@
     const b = e.target.closest('button'); if (!b) return;
     b.classList.toggle('on'); ConnGraph.toggleGroup(b.dataset.g, b.classList.contains('on'));
   });
-  $('#plToggle').addEventListener('click', () => { if (player.audio.paused) player.audio.play().catch(() => {}); else player.audio.pause(); });
+  $('#plToggle').addEventListener('click', toggleRadio);
+  $('#settingsBtn').addEventListener('click', showSettings);
   $('#plClose').addEventListener('click', stopRadio);
 
   // Delegación de clicks
@@ -1568,7 +2130,7 @@
     }
     e.stopPropagation();
     if (d.ins) { showInstrument(d.ins); return; }
-    if (d.clip) { openUrl('https://www.youtube.com/watch?v=' + d.clip); return; }
+    if (d.clip) { playClip(d.clip); return; }
     if (d.radio != null) { playRadio(+d.radio); return; }
     if (d.dis) { if (el.classList.contains('hot')) Globe.flyToDisaster(d.dis); showDisaster(d.dis); Globe.select(d.dis); return; }
     if (d.nf) { S.newsFilter = d.nf; renderNews(); return; }
@@ -1597,7 +2159,7 @@
     return false;
   };
   window.onAppPause = function () { Globe.stop(); };
-  window.onAppResume = function () { if (S.view === 'globe') Globe.start(); tick(true); };
+  window.onAppResume = function () { if (S.view === 'globe') Globe.start(); syncRadio(); tick(true); };
   window.addEventListener('resize', () => { Globe.resize(); ConnGraph.resize(); ProjGraph.resize(); renderAll(); });
 
   /* ================= ciclo de actualización ================= */
@@ -1613,6 +2175,9 @@
     every('dis', 300e3, refreshDisasters, force);
     every('clips', 600e3, refreshClips, force);
     every('radios', 6 * 3600e3, refreshRadios, force && !S.radios.length);
+    every('strikes', 300e3, refreshStrikes, force);
+    every('storms', 900e3, refreshStorms, force);
+    every('ai', 120e3, aiProcess, false);
     renderHeader();
   }
 
@@ -1623,7 +2188,7 @@
   const ca = load('arg'); if (ca) S.arg = ca;
   const cl = load('lecaps'); if (cl) S.lecaps = cl;
   const cd = load('disasters'); if (cd) S.disasters = cd;
-  const cn = load('news'); if (cn) { S.news = cn.map(analyze); S.news.forEach((n) => S.seenNews.add(n.key)); }
+  const cn = load('news'); if (cn) { S.pool = cn.map(analyze); publishNews(false); S.news.forEach((n) => S.seenNews.add(n.key)); }
   const cc = load('clips'); if (cc) S.clips = cc.map(analyze);
   computeHeat(); computeProjection(); computeRisk();
   ConnGraph.rebuild(); ProjGraph.rebuild();
