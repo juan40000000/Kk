@@ -39,9 +39,9 @@ Cada push compila el APK con GitHub Actions y lo publica en
 ## Compilar localmente
 Requiere JDK 17 y Android SDK (compileSdk 35):
 ```
-gradle :app:assembleDebug
+gradle :app:assembleRelease
 ```
-APK en `app/build/outputs/apk/debug/app-debug.apk`.
+APK en `app/build/outputs/apk/release/app-release.apk`.
 
 > Uso educativo: la app sólo **escucha** las balizas públicas que emiten los routers; no se conecta
 > ni intenta acceder a ninguna red.
