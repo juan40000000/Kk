@@ -11,6 +11,9 @@ ubicarte sin GPS, o proyectos como [WiGLE](https://wigle.net)).
 | **Lista** | Redes en tiempo real: señal (dBm y barras), distancia estimada, banda/canal, seguridad, fabricante (por la MAC), estándar Wi-Fi 4/5/6/7, y pistas como *"probable hotspot de un móvil"*, *"dispositivo IoT ESP32"*, *"impresora Wi-Fi Direct"*, *"posible cámara IP"*. Toca una red para ver el detalle y su ubicación estimada. |
 | **Radar** | Radar animado con cada red a su distancia estimada (escala logarítmica). El ángulo es decorativo: el WiFi del móvil no da dirección. |
 | **Mapa** | Mapa oscuro (OpenStreetMap/CARTO) con tu recorrido y la ubicación estimada de todos los routers vistos, coloreados por seguridad. |
+| **🚶 Movimiento** | **Detector de movimiento por WiFi.** Tu cuerpo (≈60 % agua) absorbe y refleja la señal: si alguien pasa entre el móvil y el router, la señal tiembla. Con el móvil quieto, calibra con la habitación vacía y la app pita/vibra cuando detecta a alguien moverse, incluso detrás de una pared. |
+| **🎯 Geiger** | **Encuentra físicamente cualquier router.** Elige una red y el móvil pita como un contador Geiger: cada vez más rápido al acercarte, con indicador 🔥 más caliente / 🧊 más frío. |
+| **📍 Lugares** | **Ubicación en interiores sin GPS.** Enseña a la app cada habitación (30 s) y después adivina en cuál estás sólo por la "huella" WiFi, con porcentaje de confianza. |
 | **Stats** | Congestión de canales y **mejor canal para tu router**, % de redes abiertas/WEP/WPS, fabricantes, nombres de red más repetidos, dispositivos curiosos. Exporta a CSV en formato WiGLE. |
 
 ### ¿Cómo estima la ubicación de un router?

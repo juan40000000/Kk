@@ -26,7 +26,7 @@ data class Ap(
  * centroide ponderado por potencia: cuanto más fuerte se oyó la red en un
  * punto, más "tira" de la ubicación estimada del router hacia ese punto.
  */
-class Db(ctx: Context) : SQLiteOpenHelper(ctx, "wifiradar.db", null, 1) {
+class Db(ctx: Context) : SQLiteOpenHelper(ctx, "wifiradar.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -38,9 +38,51 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "wifiradar.db", null, 1) {
                 "wsum REAL, wlat REAL, wlon REAL, n INTEGER, first_ts INTEGER, last_ts INTEGER)"
         )
         db.execSQL("CREATE TABLE track(ts INTEGER, lat REAL, lon REAL)")
+        createFingerprintTable(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createFingerprintTable(db)
+    }
+
+    private fun createFingerprintTable(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE fp(place TEXT, bssid TEXT, sum REAL, n INTEGER, PRIMARY KEY(place, bssid))")
+    }
+
+    /** Acumula un escaneo en la huella WiFi de un lugar (media de RSSI por router). */
+    fun addFingerprint(place: String, nets: List<Net>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (n in nets) {
+                val updated = db.compileStatement("UPDATE fp SET sum = sum + ?, n = n + 1 WHERE place = ? AND bssid = ?")
+                    .use { st ->
+                        st.bindDouble(1, n.rssi.toDouble()); st.bindString(2, place); st.bindString(3, n.bssid)
+                        st.executeUpdateDelete()
+                    }
+                if (updated == 0) {
+                    db.insert("fp", null, ContentValues().apply {
+                        put("place", place); put("bssid", n.bssid); put("sum", n.rssi.toDouble()); put("n", 1)
+                    })
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun fingerprints(): Map<String, Map<String, Double>> {
+        val out = LinkedHashMap<String, MutableMap<String, Double>>()
+        readableDatabase.rawQuery("SELECT place, bssid, sum / n FROM fp ORDER BY place", null).use { c ->
+            while (c.moveToNext()) out.getOrPut(c.getString(0)) { HashMap() }[c.getString(1)] = c.getDouble(2)
+        }
+        return out
+    }
+
+    fun deletePlace(place: String) {
+        writableDatabase.delete("fp", "place = ?", arrayOf(place))
+    }
 
     fun record(nets: List<Net>, loc: Location) {
         val now = System.currentTimeMillis()

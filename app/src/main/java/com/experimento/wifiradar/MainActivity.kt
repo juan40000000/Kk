@@ -28,6 +28,7 @@ import android.webkit.WebView
 import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
@@ -59,6 +60,10 @@ class MainActivity : Activity() {
     private lateinit var mapView: WebView
     private lateinit var statsText: TextView
     private lateinit var statsView: ScrollView
+    private lateinit var motion: MotionPanel
+    private lateinit var geiger: GeigerPanel
+    private lateinit var places: PlacesPanel
+    private lateinit var pages: List<View>
     private val adapter = NetAdapter()
 
     private val bg = Color.parseColor("#0B1220")
@@ -84,11 +89,13 @@ class MainActivity : Activity() {
         registerReceiver(scanReceiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
         startLocation()
         handler.post(scanLoop)
+        (pages.getOrNull(currentTab) as? ExperimentPanel)?.start()
     }
 
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(scanLoop)
+        for (p in listOf(motion, geiger, places)) p.stop()
         try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
         locMgr.removeUpdates(locListener)
     }
@@ -210,6 +217,7 @@ class MainActivity : Activity() {
             }
             Net(r.BSSID ?: "", (r.SSID ?: "").removeSurrounding("\""), r.level, r.frequency, r.capabilities ?: "", std, width)
         }.filter { it.bssid.isNotEmpty() }.sortedByDescending { it.rssi }
+        places.onScan(nets)
 
         lastLoc?.let { loc ->
             // Sólo guardamos si la posición es reciente y razonablemente precisa.
@@ -220,6 +228,15 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------------- UI
+
+    /** Red conectada (BSSID, RSSI). Android la refresca cada 1-3 s, mucho más rápido que un escaneo. */
+    @Suppress("DEPRECATION")
+    private fun connected(): Pair<String, Int>? {
+        val info = try { wifi.connectionInfo } catch (_: Exception) { null } ?: return null
+        val b = info.bssid ?: return null
+        if (b == "02:00:00:00:00:00" || info.rssi <= -127) return null
+        return b.lowercase() to info.rssi
+    }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -244,15 +261,19 @@ class MainActivity : Activity() {
         root.addView(status)
 
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), 0) }
-        tabs = listOf("Lista", "Radar", "Mapa", "Stats").mapIndexed { i, label ->
-            Button(this).apply {
-                text = label
-                isAllCaps = false
-                setOnClickListener { showTab(i) }
-                bar.addView(this, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        tabs = listOf("📋 Lista", "📡 Radar", "🗺 Mapa", "🚶 Movimiento", "🎯 Geiger", "📍 Lugares", "📊 Stats")
+            .mapIndexed { i, label ->
+                Button(this).apply {
+                    text = label
+                    isAllCaps = false
+                    setOnClickListener { showTab(i) }
+                    bar.addView(this, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                }
             }
-        }
-        root.addView(bar)
+        root.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(bar)
+        })
 
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -297,7 +318,11 @@ class MainActivity : Activity() {
                 })
             })
         }
-        for (v in listOf(listView, radar, mapView, statsView)) content.addView(v)
+        motion = MotionPanel(this, ::connected)
+        geiger = GeigerPanel(this, ::connected) { nets }
+        places = PlacesPanel(this, db)
+        pages = listOf(listView, radar, mapView, motion, geiger, places, statsView)
+        for (v in pages) content.addView(v)
         return root
     }
 
@@ -305,8 +330,9 @@ class MainActivity : Activity() {
 
     private fun showTab(i: Int) {
         currentTab = i
-        listOf(listView, radar, mapView, statsView).forEachIndexed { idx, v ->
+        pages.forEachIndexed { idx, v ->
             v.visibility = if (idx == i) View.VISIBLE else View.GONE
+            (v as? ExperimentPanel)?.let { if (idx == i) it.start() else it.stop() }
         }
         tabs.forEachIndexed { idx, b -> b.alpha = if (idx == i) 1f else 0.5f }
         refreshViews()
@@ -326,7 +352,7 @@ class MainActivity : Activity() {
         when (currentTab) {
             1 -> radar.nets = nets
             2 -> mapView.evaluateJavascript("window.refresh && refresh()", null)
-            3 -> statsText.text = buildStats()
+            6 -> statsText.text = buildStats()
         }
     }
 
@@ -350,6 +376,7 @@ class MainActivity : Activity() {
         }
         AlertDialog.Builder(this).setTitle(n.displaySsid).setMessage(sb.toString())
             .setPositiveButton("OK", null)
+            .setNegativeButton("🎯 Buscarla") { _, _ -> geiger.setTarget(n); showTab(4) }
             .apply {
                 if (ap != null) setNeutralButton("Ver en mapa") { _, _ ->
                     showTab(2)
