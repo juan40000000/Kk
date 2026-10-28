@@ -130,7 +130,7 @@ class MagnetPanel(ctx: Context) : ExperimentPanel(ctx), SensorEventListener {
     private val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val sensor = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
     private var magnitude = 0f
-    private var baseline = 0f
+    private var baseMag = 0f
     private val recent = ArrayDeque<Float>()
     private val beeper = Beeper(ctx)
     private var lastBeep = 0L
@@ -152,7 +152,7 @@ class MagnetPanel(ctx: Context) : ExperimentPanel(ctx), SensorEventListener {
             })
             addView(big); addView(unit); addView(state); addView(delta)
             addView(chart, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ctx.dp(140)))
-            addView(ctx.button("Poner a cero aquí (calibrar)") { baseline = magnitude })
+            addView(ctx.button("Poner a cero aquí (calibrar)") { baseMag = magnitude })
         })
         if (sensor == null) { big.text = "—"; state.text = "Sin magnetómetro"; unit.text = "Este móvil no tiene sensor de campo magnético" }
     }
@@ -165,7 +165,7 @@ class MagnetPanel(ctx: Context) : ExperimentPanel(ctx), SensorEventListener {
 
     override fun onSensorChanged(e: SensorEvent) {
         magnitude = sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2])
-        if (baseline == 0f) baseline = magnitude
+        if (baseMag == 0f) baseMag = magnitude
     }
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
@@ -176,8 +176,8 @@ class MagnetPanel(ctx: Context) : ExperimentPanel(ctx), SensorEventListener {
         val m = recent.average().toFloat()
         chart.add(m)
         big.text = "%.0f".format(m)
-        unit.text = "µT  ·  base %.0f µT".format(baseline)
-        val d = m - baseline
+        unit.text = "µT  ·  base %.0f µT".format(baseMag)
+        val d = m - baseMag
         delta.text = (if (d >= 0) "+" else "") + "%.0f µT sobre la base".format(d)
         val a = abs(d)
         when {
