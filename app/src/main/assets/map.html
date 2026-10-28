@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body, #m { margin: 0; height: 100%; background: #0b1220; color: #e2e8f0; font-family: sans-serif; }
+  #msg { position: absolute; top: 40%; width: 100%; text-align: center; padding: 16px; box-sizing: border-box; }
+  .leaflet-popup-content { font-size: 13px; line-height: 1.4; }
+  #legend { position: absolute; bottom: 18px; left: 8px; z-index: 1000; background: rgba(11,18,32,.85);
+            padding: 6px 9px; border-radius: 6px; font-size: 11px; }
+  #legend span { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 6px; }
+  #filters { position: absolute; top: 8px; right: 8px; z-index: 1000; background: rgba(11,18,32,.85);
+             padding: 6px 9px; border-radius: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="m"></div>
+<div id="msg">Cargando mapa… (necesita conexión a Internet)</div>
+<script>
+function color(s) {
+  if (s === 'Abierta') return '#ef4444';
+  if (s === 'WEP') return '#f97316';
+  if (s === 'WPA') return '#f59e0b';
+  if (s === 'WPA3' || s === 'WPA2/WPA3' || s === 'OWE') return '#22c55e';
+  if (s === 'Enterprise') return '#a855f7';
+  return '#3b82f6';
+}
+function esc(t) { return String(t).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+
+if (typeof L === 'undefined') {
+  document.getElementById('msg').textContent = 'No se pudo cargar el mapa. Revisa tu conexión a Internet.';
+} else {
+  document.getElementById('msg').remove();
+  var map = L.map('m', { zoomControl: false }).setView([0, 0], 2);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO'
+  }).addTo(map);
+  var trackLayer = L.layerGroup().addTo(map);
+  var apLayer = L.layerGroup().addTo(map);
+  var meLayer = L.layerGroup().addTo(map);
+  var centered = false, onlyNow = false, markers = {}, pendingFocus = null;
+
+  var legend = document.createElement('div');
+  legend.id = 'legend';
+  legend.innerHTML = '<span style="background:#ef4444"></span>Abierta<span style="background:#f59e0b"></span>WPA' +
+    '<span style="background:#3b82f6"></span>WPA2<span style="background:#22c55e"></span>WPA3' +
+    '<span style="background:#a855f7"></span>Ent.<br>Borde blanco = visible ahora';
+  document.body.appendChild(legend);
+
+  var filters = document.createElement('div');
+  filters.id = 'filters';
+  filters.innerHTML = '<label><input type="checkbox" id="onlyNow"> Sólo visibles ahora</label>';
+  document.body.appendChild(filters);
+  document.getElementById('onlyNow').onchange = function (e) { onlyNow = e.target.checked; refresh(); };
+
+  window.refresh = function () {
+    var d;
+    try { d = JSON.parse(Android.data()); } catch (e) { return; }
+    trackLayer.clearLayers(); apLayer.clearLayers(); meLayer.clearLayers(); markers = {};
+
+    if (d.track.length > 1) L.polyline(d.track, { color: '#22c55e', weight: 3, opacity: .6 }).addTo(trackLayer);
+
+    d.aps.forEach(function (a) {
+      if (onlyNow && !a.now) return;
+      var mk = L.circleMarker([a.lat, a.lon], {
+        radius: Math.max(4, Math.min(11, (a.r + 100) / 6)),
+        color: a.now ? '#ffffff' : color(a.sec), weight: a.now ? 2 : 1,
+        fillColor: color(a.sec), fillOpacity: .8
+      }).bindPopup('<b>' + esc(a.s) + '</b><br>' + esc(a.b) + '<br>' + esc(a.v) +
+        '<br>' + esc(a.sec) + ' · ' + esc(a.band) + ' ch' + a.ch +
+        '<br>Mejor señal: ' + a.r + ' dBm<br>Observaciones: ' + a.n +
+        '<br>Primera vez: ' + esc(a.first) + '<br>Última: ' + esc(a.last));
+      mk.addTo(apLayer);
+      markers[a.b] = mk;
+    });
+
+    if (d.me) {
+      L.circle([d.me[0], d.me[1]], { radius: d.me[2], color: '#38bdf8', weight: 1, fillOpacity: .1 }).addTo(meLayer);
+      L.circleMarker([d.me[0], d.me[1]], { radius: 6, color: '#fff', fillColor: '#38bdf8', fillOpacity: 1 }).addTo(meLayer);
+      if (!centered && !pendingFocus) { map.setView([d.me[0], d.me[1]], 17); centered = true; }
+    }
+    if (pendingFocus) {
+      map.setView([pendingFocus[0], pendingFocus[1]], 19);
+      if (markers[pendingFocus[2]]) markers[pendingFocus[2]].openPopup();
+      pendingFocus = null; centered = true;
+    }
+  };
+
+  window.focusAp = function (lat, lon, bssid) { pendingFocus = [lat, lon, bssid]; refresh(); };
+
+  refresh();
+  setInterval(refresh, 5000);
+}
+</script>
+</body>
+</html>
