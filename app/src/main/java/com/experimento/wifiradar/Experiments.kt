@@ -32,29 +32,29 @@ import kotlin.math.sqrt
 /** Red a la que está conectado el móvil: (BSSID, RSSI). Se actualiza mucho más seguido que los escaneos. */
 typealias ConnectedProvider = () -> Pair<String, Int>?
 
-private val BG = Color.parseColor("#0B1220")
-private val FG = Color.parseColor("#E2E8F0")
-private val DIM = Color.parseColor("#94A3B8")
-private val GREEN = Color.parseColor("#22C55E")
-private val RED = Color.parseColor("#EF4444")
-private val AMBER = Color.parseColor("#F59E0B")
+internal val BG = Color.parseColor("#0B1220")
+internal val FG = Color.parseColor("#E2E8F0")
+internal val DIM = Color.parseColor("#94A3B8")
+internal val GREEN = Color.parseColor("#22C55E")
+internal val RED = Color.parseColor("#EF4444")
+internal val AMBER = Color.parseColor("#F59E0B")
 
-private fun Context.dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+internal fun Context.dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-private fun Context.label(size: Float, color: Int = FG, bold: Boolean = false) = TextView(this).apply {
+internal fun Context.label(size: Float, color: Int = FG, bold: Boolean = false) = TextView(this).apply {
     textSize = size
     setTextColor(color)
     if (bold) typeface = Typeface.DEFAULT_BOLD
     setPadding(dp(16), dp(4), dp(16), dp(4))
 }
 
-private fun Context.button(text: String, onClick: () -> Unit) = Button(this).apply {
+internal fun Context.button(text: String, onClick: () -> Unit) = Button(this).apply {
     this.text = text
     isAllCaps = false
     setOnClickListener { onClick() }
 }
 
-private fun now() = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+internal fun now() = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
 
 /** Panel con ciclo de vida: el Activity lo arranca al mostrar su pestaña y lo para al salir. */
 abstract class ExperimentPanel(ctx: Context) : ScrollView(ctx) {
@@ -115,7 +115,7 @@ class ChartView(ctx: Context) : View(ctx) {
     }
 }
 
-private class Beeper(ctx: Context) {
+internal class Beeper(ctx: Context) {
     private val tone = try { ToneGenerator(AudioManager.STREAM_MUSIC, 80) } catch (_: Exception) { null }
     @Suppress("DEPRECATION")
     private val vib = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator

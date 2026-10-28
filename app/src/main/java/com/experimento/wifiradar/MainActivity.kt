@@ -63,6 +63,9 @@ class MainActivity : Activity() {
     private lateinit var motion: MotionPanel
     private lateinit var geiger: GeigerPanel
     private lateinit var places: PlacesPanel
+    private lateinit var rttPanel: RttPanel
+    private lateinit var magnet: MagnetPanel
+    private lateinit var sonar: SonarPanel
     private lateinit var pages: List<View>
     private val adapter = NetAdapter()
 
@@ -95,7 +98,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(scanLoop)
-        for (p in listOf(motion, geiger, places)) p.stop()
+        for (p in listOf(motion, geiger, places, rttPanel, magnet, sonar)) p.stop()
         try { unregisterReceiver(scanReceiver) } catch (_: Exception) {}
         locMgr.removeUpdates(locListener)
     }
@@ -116,6 +119,11 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 2) {
+            // Micrófono para el sonar: reiniciamos el panel si estamos en él
+            if (currentTab == 8) { sonar.stop(); sonar.start() }
+            return
+        }
         if (hasPermissions()) {
             startLocation()
             doScan()
@@ -261,7 +269,7 @@ class MainActivity : Activity() {
         root.addView(status)
 
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), 0) }
-        tabs = listOf("📋 Lista", "📡 Radar", "🗺 Mapa", "🚶 Movimiento", "🎯 Geiger", "📍 Lugares", "📊 Stats")
+        tabs = listOf("📋 Lista", "📡 Radar", "🗺 Mapa", "🚶 Movimiento", "🎯 Geiger", "📍 Lugares", "📏 RTT", "🧲 Metales", "🦇 Sonar", "📊 Stats")
             .mapIndexed { i, label ->
                 Button(this).apply {
                     text = label
@@ -321,7 +329,10 @@ class MainActivity : Activity() {
         motion = MotionPanel(this, ::connected)
         geiger = GeigerPanel(this, ::connected) { nets }
         places = PlacesPanel(this, db)
-        pages = listOf(listView, radar, mapView, motion, geiger, places, statsView)
+        rttPanel = RttPanel(this) { nets }
+        magnet = MagnetPanel(this)
+        sonar = SonarPanel(this)
+        pages = listOf(listView, radar, mapView, motion, geiger, places, rttPanel, magnet, sonar, statsView)
         for (v in pages) content.addView(v)
         return root
     }
@@ -330,6 +341,8 @@ class MainActivity : Activity() {
 
     private fun showTab(i: Int) {
         currentTab = i
+        if (i == 8 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 2)
         pages.forEachIndexed { idx, v ->
             v.visibility = if (idx == i) View.VISIBLE else View.GONE
             (v as? ExperimentPanel)?.let { if (idx == i) it.start() else it.stop() }
@@ -352,7 +365,7 @@ class MainActivity : Activity() {
         when (currentTab) {
             1 -> radar.nets = nets
             2 -> mapView.evaluateJavascript("window.refresh && refresh()", null)
-            6 -> statsText.text = buildStats()
+            9 -> statsText.text = buildStats()
         }
     }
 
