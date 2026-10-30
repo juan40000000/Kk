@@ -31,4 +31,4 @@ El APK queda en `app/build/outputs/apk/release/app-release.apk` (firmado con la 
 
 - NOAA Climate Prediction Center: `wksst9120.for` (índices semanales) y `oni.ascii.txt` (ONI).
 - NASA GIBS: `GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies`.
-- Mapa base © OpenStreetMap, © CARTO. Mapa con Leaflet.
+- Mapa base © Esri (World Dark Gray + World Boundaries and Places). Mapa con Leaflet.

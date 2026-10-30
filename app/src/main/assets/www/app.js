@@ -106,22 +106,65 @@ function phase(a) {
 
 // ---------- Mapa ----------
 var map = L.map('map', {
-  center: [0, 210], zoom: 2, minZoom: 1, maxZoom: 8,
-  worldCopyJump: true, zoomControl: false, attributionControl: true
+  center: [-10, 230], zoom: 2, minZoom: 2, maxZoom: 10,
+  worldCopyJump: true, zoomControl: false, attributionControl: true,
+  maxBounds: [[-85, -720], [85, 1080]], maxBoundsViscosity: 1
 });
 L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-  subdomains: 'abcd', maxZoom: 19,
-  attribution: '&copy; OpenStreetMap &copy; CARTO'
+// Mapa base sin clave de API (Esri)
+var ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+L.tileLayer(ESRI + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  maxNativeZoom: 16, maxZoom: 19,
+  attribution: 'Mapa &copy; Esri'
 }).addTo(map);
 
+// Fronteras, países y ciudades por encima de la capa de temperatura
 map.createPane('labels');
 map.getPane('labels').style.zIndex = 450;
 map.getPane('labels').style.pointerEvents = 'none';
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-  subdomains: 'abcd', maxZoom: 19, pane: 'labels'
+L.tileLayer(ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+  maxNativeZoom: 16, maxZoom: 19, pane: 'labels'
 }).addTo(map);
+
+// ---------- Mi ubicación ----------
+var LocateControl = L.Control.extend({
+  options: { position: 'bottomleft' },
+  onAdd: function () {
+    var btn = L.DomUtil.create('a', 'leaflet-bar locate-btn');
+    btn.href = '#';
+    btn.title = 'Mi ubicación';
+    btn.innerHTML = '📍';
+    L.DomEvent.on(btn, 'click', function (e) { L.DomEvent.preventDefault(e); L.DomEvent.stopPropagation(e); locate(); });
+    return btn;
+  }
+});
+map.addControl(new LocateControl());
+
+var myMarker = null;
+function showMyLocation(lat, lon) {
+  var ll = [lat, lon];
+  if (myMarker) map.removeLayer(myMarker);
+  myMarker = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#ffd166', fillOpacity: 1 })
+    .addTo(map)
+    .bindPopup('<b>Tu ubicación</b><br>' + lat.toFixed(3) + ', ' + lon.toFixed(3))
+    .openPopup();
+  map.setView(ll, 5);
+  store('myLoc', ll);
+}
+window.__onLocation = function (lat, lon, err) {
+  if (err) { alert('No se pudo obtener tu ubicación: ' + err); return; }
+  showMyLocation(lat, lon);
+};
+function locate() {
+  if (window.Android && window.Android.requestLocation) {
+    window.Android.requestLocation();
+  } else if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function (p) { showMyLocation(p.coords.latitude, p.coords.longitude); },
+      function (e) { window.__onLocation(0, 0, e.message); });
+  }
+}
 
 var layerKey = 'anom';
 var opacity = 0.8;
@@ -385,6 +428,12 @@ document.getElementById('refreshBtn').onclick = function () {
   refreshLayer();
   loadData();
 };
+
+var savedLoc = load('myLoc');
+if (savedLoc) {
+  myMarker = L.circleMarker(savedLoc, { radius: 8, color: '#fff', weight: 3, fillColor: '#ffd166', fillOpacity: 1 })
+    .addTo(map).bindPopup('<b>Tu ubicación</b>');
+}
 
 renderLegend();
 refreshLayer();
