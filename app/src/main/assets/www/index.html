@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Monitor El Niño</title>
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<header id="topbar">
+  <div class="title">
+    <strong>Monitor El Niño</strong>
+    <span id="updated">Cargando datos…</span>
+  </div>
+  <button id="status" class="chip neutral" aria-label="Estado ENSO">—</button>
+</header>
+
+<div id="mapcontrols">
+  <div class="datebox">
+    <button id="prevDay" aria-label="Día anterior">‹</button>
+    <span id="dateLabel">—</span>
+    <button id="nextDay" aria-label="Día siguiente">›</button>
+  </div>
+  <div class="row">
+    <select id="layerSel" aria-label="Capa">
+      <option value="anom">Anomalía de temperatura del mar</option>
+      <option value="sst">Temperatura del mar</option>
+    </select>
+    <button id="playBtn" aria-label="Animar últimos 30 días">▶</button>
+  </div>
+  <label class="row small">Opacidad <input id="opacity" type="range" min="0.2" max="1" step="0.05" value="0.8"></label>
+  <div id="legend"></div>
+</div>
+
+<section id="sheet" class="collapsed">
+  <div id="handle"><span></span></div>
+  <nav id="tabs">
+    <button data-tab="idx" class="active">Índices</button>
+    <button data-tab="chart">Evolución</button>
+    <button data-tab="info">¿Qué es?</button>
+  </nav>
+  <div class="tab active" id="tab-idx">
+    <div id="regions"></div>
+    <p class="note" id="weekNote"></p>
+  </div>
+  <div class="tab" id="tab-chart">
+    <h3>Niño 3.4 semanal (últimas 52 semanas)</h3>
+    <div id="weeklyChart" class="chart"></div>
+    <h3>ONI – Índice Oceánico El Niño (últimos 10 años)</h3>
+    <div id="oniChart" class="chart"></div>
+  </div>
+  <div class="tab" id="tab-info">
+    <p><b>El Niño</b> es el calentamiento anómalo del Pacífico ecuatorial central y oriental. <b>La Niña</b> es el enfriamiento opuesto. Juntos forman el ciclo <b>ENSO</b>.</p>
+    <p>NOAA declara condiciones de El Niño cuando la anomalía de la región <b>Niño 3.4</b> es ≥ +0,5 °C (y La Niña cuando es ≤ −0,5 °C), sostenida varios meses (índice ONI).</p>
+    <ul>
+      <li><b>Mapa:</b> anomalía diaria de temperatura superficial del mar (GHRSST MUR, NASA GIBS). Rojo = más cálido de lo normal, azul = más frío.</li>
+      <li><b>Índices semanales:</b> NOAA CPC (wksst9120).</li>
+      <li><b>ONI:</b> NOAA CPC (oni.ascii).</li>
+    </ul>
+    <p class="note">Toca una región en el mapa para ver su anomalía. Los datos satelitales tienen 1–3 días de retraso.</p>
+    <button id="refreshBtn" class="wide">Actualizar datos</button>
+  </div>
+</section>
+
+<script src="leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

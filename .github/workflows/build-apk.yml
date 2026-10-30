@@ -1,0 +1,45 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Compilar APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk MonitorElNino.apk
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonitorElNino-apk
+          path: MonitorElNino.apk
+
+      - name: Publicar release descargable
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: Monitor El Niño (última versión)
+          prerelease: true
+          make_latest: false
+          files: MonitorElNino.apk
+          body: |
+            APK compilado automáticamente desde la rama `${{ github.ref_name }}` (commit ${{ github.sha }}).
+            Descárgalo en tu Android y ábrelo para instalar (permite "instalar apps de origen desconocido").
