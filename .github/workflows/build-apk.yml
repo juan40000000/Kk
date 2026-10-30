@@ -35,7 +35,7 @@ jobs:
       - name: Publicar release descargable
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-latest
+          tag_name: elnino-apk-latest
           name: Monitor El Niño (última versión)
           prerelease: true
           make_latest: false

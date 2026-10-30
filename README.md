@@ -14,7 +14,7 @@ App Android (APK) para seguir el fenómeno **El Niño / La Niña (ENSO)** en viv
 
 Cada push compila el APK con GitHub Actions:
 
-- **Releases → `apk-latest` → `MonitorElNino.apk`**, o
+- **Releases → `elnino-apk-latest` → `MonitorElNino.apk`**, o
 - **Actions → Build APK → artefacto `MonitorElNino-apk`**.
 
 Ábrelo en el teléfono y permite *instalar apps de origen desconocido*. Requiere Android 7.0 o superior.
