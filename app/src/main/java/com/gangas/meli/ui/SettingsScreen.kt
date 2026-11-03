@@ -85,9 +85,10 @@ fun SettingsScreen(c: AppContainer) {
 }
 
 private fun modeLabel(m: FetchMode) = when (m) {
-    FetchMode.AUTO -> "Automático (API si hay credenciales, si no web)"
-    FetchMode.API_ONLY -> "Sólo API"
-    FetchMode.WEB_ONLY -> "Sólo web"
+    FetchMode.AUTO -> "Automático (API → web → navegador)"
+    FetchMode.API_ONLY -> "Sólo API (requiere credenciales)"
+    FetchMode.WEB_ONLY -> "Web (HTML directo → navegador)"
+    FetchMode.BROWSER_ONLY -> "Sólo navegador interno (más lento, más robusto)"
 }
 
 @Composable private fun Section(t: String) = Text(t, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

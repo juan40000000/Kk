@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import java.io.IOException
 
 /**
  * Fallback cuando no hay credenciales de API: parsea el listado público.
@@ -27,23 +28,55 @@ class MeliWebScraper(private val client: OkHttpClient) {
 
     suspend fun search(site: Site, query: String, offset: Int, sortPriceAsc: Boolean): List<Listing> {
         val req = Request.Builder().url(buildUrl(site, query, offset, sortPriceAsc))
-            .header("User-Agent", Http.randomUserAgent())
+            .header("User-Agent", Http.DESKTOP_UA)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", if (site == Site.BRASIL) "pt-BR,pt;q=0.9" else "es-AR,es;q=0.9")
             .build()
-        return parse(Http.getText(client, req), site)
+        val html = Http.getText(client, req)
+        val items = parse(html, site)
+        if (items.isEmpty() && !isNoResultsPage(html)) {
+            throw IOException("página sin publicaciones (\"${pageTitle(html)}\")")
+        }
+        return items
     }
 
     companion object {
+        fun pageTitle(html: String): String =
+            Jsoup.parse(html).title().ifBlank { "sin título" }.take(80)
+
+        /** La búsqueda realmente no tiene resultados (no es un bloqueo). */
+        fun isNoResultsPage(html: String): Boolean =
+            html.contains("ui-search-rescue") || html.contains("No hay publicaciones que coincidan") ||
+                html.contains("Não há anúncios que correspondam")
+
         private val ID_REGEX = "(M[LCP][A-Z])-?(\\d{6,})".toRegex()
 
         fun parse(html: String, site: Site): List<Listing> {
             val doc = Jsoup.parse(html)
-            val cards = doc.select("li.ui-search-layout__item, div.ui-search-result__wrapper, div.poly-card")
+            var cards = doc.select("li.ui-search-layout__item, div.ui-search-result__wrapper, div.poly-card")
                 .map { it.closestCard() }
                 .distinct()
-            return cards.mapNotNull { parseCard(it, site) }
+            if (cards.isEmpty()) cards = genericCards(doc)
+            return cards.mapNotNull { parseCard(it, site) }.distinctBy { it.id }
         }
+
+        /**
+         * Fallback independiente del layout: cada link a una publicación (MLA123…)
+         * + el ancestro más cercano que contenga un precio.
+         */
+        private fun genericCards(doc: org.jsoup.nodes.Document): List<Element> =
+            doc.select("a[href]")
+                .filter { ID_REGEX.containsMatchIn(it.attr("href")) && it.text().length >= 8 }
+                .mapNotNull { a ->
+                    var e: Element? = a.parent()
+                    var depth = 0
+                    while (e != null && depth < 8) {
+                        if (e.selectFirst(".andes-money-amount__fraction, [class*=price]") != null) return@mapNotNull e
+                        e = e.parent(); depth++
+                    }
+                    null
+                }
+                .distinct()
 
         private fun Element.closestCard(): Element =
             closest("li.ui-search-layout__item") ?: this
@@ -61,7 +94,10 @@ class MeliWebScraper(private val client: OkHttpClient) {
             val current = card.selectFirst(
                 ".poly-price__current .andes-money-amount, .ui-search-price__second-line .andes-money-amount, .andes-money-amount--cents-superscript"
             ) ?: card.select(".andes-money-amount").firstOrNull { it.closest("s") == null && !it.hasClass("andes-money-amount--previous") }
-            val price = current?.let { amount(it) } ?: return null
+            val price = current?.let { amount(it) }
+                ?: card.select(".andes-money-amount__fraction").firstOrNull { it.closest("s") == null }?.let { amount(it) }
+                ?: card.selectFirst("[itemprop=price]")?.attr("content")?.toDoubleOrNull()
+                ?: return null
 
             val previous = card.selectFirst("s.andes-money-amount--previous, .andes-money-amount--previous, s .andes-money-amount")
                 ?.let { amount(it) }

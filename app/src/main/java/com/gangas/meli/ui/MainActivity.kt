@@ -82,7 +82,7 @@ fun AppRoot(vm: SearchViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gangas ML · detector de errores de precio") },
+                title = { Text("Gangas ML") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,

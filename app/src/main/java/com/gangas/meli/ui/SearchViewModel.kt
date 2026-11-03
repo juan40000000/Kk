@@ -57,8 +57,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val out = container.scanner.scan(s.site, q, s.pages, s.mode)
                 val err = if (out.fetched == 0) {
-                    "No se obtuvieron publicaciones. " + (out.errors.firstOrNull()?.let { "($it) " } ?: "") +
-                        "Mercado Libre puede exigir credenciales de API: configuralas en Ajustes."
+                    "No se obtuvieron publicaciones.\n" + out.errors.distinct().take(4).joinToString("\n") { "• $it" } +
+                        "\nProbá con otra búsqueda, cambiá la fuente en Ajustes o cargá credenciales de API."
                 } else null
                 _state.update { it.copy(loading = false, outcome = out, error = err) }
             } catch (e: Exception) {

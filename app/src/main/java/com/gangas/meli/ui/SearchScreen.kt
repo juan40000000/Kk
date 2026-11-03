@@ -94,7 +94,7 @@ fun SearchScreen(vm: SearchViewModel) {
         st.outcome?.let { o ->
             val a = o.analysis
             Text(
-                "${o.fetched} publicaciones (${if (o.usedApi) "API" else "web"}) · ${a.analyzed} relevantes · " +
+                "${o.fetched} publicaciones (${o.source}) · ${a.analyzed} relevantes · " +
                     "${a.discardedAccessories} accesorios · mediana ${a.marketMedian?.let { formatPrice(it, "") } ?: "-"} · ${deals.size} gangas",
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),

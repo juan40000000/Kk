@@ -8,7 +8,7 @@ import com.gangas.core.net.MeliRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class ScanOutcome(val analysis: AnalysisResult, val fetched: Int, val usedApi: Boolean, val errors: List<String>)
+data class ScanOutcome(val analysis: AnalysisResult, val fetched: Int, val source: String, val errors: List<String>)
 
 class DealScanner(
     private val repository: MeliRepository,
@@ -21,6 +21,6 @@ class DealScanner(
             engine().analyze(query, fetch.listings, history.prices())
         }
         withContext(Dispatchers.IO) { history.record(fetch.listings.associate { it.id to it.price }) }
-        return ScanOutcome(analysis, fetch.listings.size, fetch.usedApi, fetch.errors)
+        return ScanOutcome(analysis, fetch.listings.size, fetch.sourceName, fetch.errors)
     }
 }

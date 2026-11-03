@@ -45,4 +45,16 @@ class ScraperTest {
         assertEquals("https://listado.mercadolibre.com.ar/iphone-15-pro_Desde_51_OrderId_PRICE_NoIndex_True",
             s.buildUrl(Site.ARGENTINA, "iPhone 15 Pró", 50, true))
     }
+
+    @Test fun genericFallbackUnknownLayout() {
+        val h = """
+            <div class="grid"><div class="x-item"><a href="https://articulo.mercadolibre.com.ar/MLA-9876543210-ps5-slim">Consola PS5 Slim 1TB</a>
+            <div><span class="andes-money-amount__fraction">850.000</span></div></div>
+            <div class="x-item"><a href="https://articulo.mercadolibre.com.ar/MLA-9876543211-ps5">Sony PlayStation 5 Digital</a>
+            <span class="andes-money-amount__fraction">799.999</span></div></div>
+        """
+        val r = MeliWebScraper.parse(h, Site.ARGENTINA)
+        assertEquals(listOf("MLA9876543210", "MLA9876543211"), r.map { it.id })
+        assertEquals(listOf(850_000.0, 799_999.0), r.map { it.price })
+    }
 }
