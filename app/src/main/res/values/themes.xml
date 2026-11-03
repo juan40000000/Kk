@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Gangas" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#FF2D3277</item>
+        <item name="android:windowBackground">#FFF5F5F5</item>
+    </style>
+</resources>
