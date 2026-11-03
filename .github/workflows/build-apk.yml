@@ -24,7 +24,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Tests del motor
-        run: ./gradlew :core:test --stacktrace
+        run: ./gradlew :core:test
 
       - name: Keystore (opcional, desde secrets)
         env:
@@ -39,7 +39,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --stacktrace
+        run: ./gradlew :app:assembleRelease
 
       - name: Renombrar
         run: cp app/build/outputs/apk/release/app-release.apk GangasML.apk
