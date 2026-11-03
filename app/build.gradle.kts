@@ -17,22 +17,14 @@ android {
         versionName = "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
     }
 
+    val ksPath = System.getenv("KEYSTORE_FILE")
+    val hasReleaseKey = ksPath != null && file(ksPath).exists()
     signingConfigs {
-        create("release") {
-            val ks = System.getenv("KEYSTORE_FILE")
-            if (ks != null && file(ks).exists()) {
-                storeFile = file(ks)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
-            } else {
-                // sin secretos: firma con la clave debug para que el APK sea instalable
-                val debug = signingConfigs.getByName("debug")
-                storeFile = debug.storeFile
-                storePassword = debug.storePassword
-                keyAlias = debug.keyAlias
-                keyPassword = debug.keyPassword
-            }
+        if (hasReleaseKey) create("release") {
+            storeFile = file(ksPath!!)
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
         }
     }
 
@@ -41,7 +33,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            // sin secretos: firma con la clave debug para que el APK sea instalable
+            signingConfig = signingConfigs.getByName(if (hasReleaseKey) "release" else "debug")
         }
     }
     compileOptions {
